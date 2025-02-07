@@ -3,12 +3,12 @@ nv: pubBench-nv
 nvidia: nv
 
 # Set number of computes
-numFMA ?= 10000
+nOps ?= 10000
 
 %-nv: %.cu
-		nvcc $^ -o $@ -O3 -D numFMA=$(numFMA)
+		nvcc $^ -o $@ -O3 -D nOps=$(nOps)
 %-amd: %.cu
-		hipcc -std=c++11 $^ -o $@ -O3 -D numFMA=$(numFMA)
+		hipcc -std=c++11 $^ -o $@ -O3 -D nOps=$(nOps)
 		
 clean: 
 	rm pubBench-*
