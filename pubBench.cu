@@ -58,6 +58,13 @@ struct FMA {
 };
 
 template<class T>
+struct Div {
+  __device__ T operator()(T x, T y, T z) {
+    return x / y;
+  }
+};
+
+template<class T>
 struct Rsqrt {
   __device__ T operator()(T x, T y, T z) {
     return rsqrtf(x);
@@ -229,6 +236,7 @@ static void bench_func(void) {
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
+	// Double flop count for FMA operations since FMA does two ops in one instruction
 	std::string s = typeid(Func).name();
 	if(s.find("FMA") != std::string::npos) {
 		totalFlops *= 2;
@@ -278,7 +286,7 @@ static void bench_func(void) {
 }
 
 template<class T>
-static void bench_int(bool add, bool mul, bool fma, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority) {
+static void bench_int(bool add, bool mul, bool fma, bool div, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority) {
 	if(add) {
 		printf("  Add test: ");
 		bench_func<T,Add<T>>();
@@ -290,6 +298,10 @@ static void bench_int(bool add, bool mul, bool fma, bool rsq, bool xorFunc, bool
 	if(fma) {
 		printf("  FMA test: ");
 		bench_func<T,FMA<T>>();
+	}
+	if(div) {
+		printf("  Div test: ");
+		bench_func<T,Div<T>>();
 	}
 	if(rsq) {
 		printf("  Rsqrt test: ");
@@ -333,7 +345,7 @@ static void bench_int(bool add, bool mul, bool fma, bool rsq, bool xorFunc, bool
 
 
 template<class T>
-static void bench_float(bool add, bool mul, bool fma, bool rsq) {
+static void bench_float(bool add, bool mul, bool fma, bool div, bool rsq) {
 	if(add) {
 		printf("  Add test: ");
 		bench_func<T,Add<T>>();
@@ -346,6 +358,10 @@ static void bench_float(bool add, bool mul, bool fma, bool rsq) {
 		printf("  FMA test: ");
 		bench_func<T,FMA<T>>();
 	}
+	if(div) {
+		printf("  Div test: ");
+		bench_func<T,Div<T>>();
+	}
 	if(rsq) {
 		printf("  Rsqrt test: ");
 		bench_func<T,Rsqrt<T>>();
@@ -357,7 +373,7 @@ int main(int argc, char **argv)
 
 	//CLI parsing
 	bool i8 = false, i16 = false, i32 = false, i64 = false, fp32 = false, fp64 = false;
-	bool add = false, mul = false, fma = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
+	bool add = false, mul = false, fma = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
 
 	int c, option_index = 0;
 	static struct option long_options[] = {
@@ -374,6 +390,7 @@ int main(int argc, char **argv)
 					{"add",     no_argument,   0,  'k' },
 					{"mul",     no_argument,   0,  'l' },
 					{"fma",     no_argument,   0,  'm' },
+					{"div",     no_argument,   0,  't' },
 					{"rsqrt",   no_argument,   0,  'n' },
 					{"xor",     no_argument,   0,  's' },
 					{"shift",   no_argument,   0,  'o' },
@@ -433,6 +450,10 @@ int main(int argc, char **argv)
 				mul = 1;
 				printf("Selected Multiply test\n");
 				break;
+			case 't':
+				div = 1;
+				printf("Selected Division test\n");
+				break;
 			case 'm':
 				fma = 1;
 				printf("Selected FMA test\n");
@@ -483,6 +504,7 @@ int main(int argc, char **argv)
 				printf("\n  --add, run Add tests only");
 				printf("\n  --mul, run Multiply tests only");
 				printf("\n  --fma, run FMA tests only");
+				printf("\n  --div, run Division tests only");
 				printf("\n  --rsqrt, run rsqrt tests only");
 				printf("\n  --xor, run XOR tests only");
 				printf("\n  --shift, run Shift tests only");
@@ -494,9 +516,9 @@ int main(int argc, char **argv)
 		}
 	}
 	// If no operation is selected, do all of them
-	if (! (add || mul || fma || rsq || xorFunc || shift || rotate || choosery || majority)) {
+	if (! (add || mul || fma || div || rsq || xorFunc || shift || rotate || choosery || majority)) {
 		printf("Selected all operation tests\n");
-		add=1, mul=1, fma=1, rsq=1, xorFunc=1, shift=1, rotate=1, choosery=1, majority=1;
+		add=1, mul=1, fma=1, div=1, rsq=1, xorFunc=1, shift=1, rotate=1, choosery=1, majority=1;
 	}
 	if (! (i8 || i16 || i32 || i64 || fp32 || fp64)) {
 		printf("Selected all datatype tests\n");
@@ -504,26 +526,26 @@ int main(int argc, char **argv)
 	}
   if (i8) {
     printf("\nRunning int8 tests:\n");
-    bench_int<uint8_t>(add, mul, fma, rsq, xorFunc, shift, rotate, choosery, majority);
+    bench_int<uint8_t>(add, mul, fma, div, rsq, xorFunc, shift, rotate, choosery, majority);
   }
   if (i16) {
 		printf("\nRunning int16 tests:\n");
-		bench_int<uint16_t>(add, mul, fma, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint16_t>(add, mul, fma, div, rsq, xorFunc, shift, rotate, choosery, majority);
   }
   if (i32) {
 		printf("\nRunning int32 tests:\n");
-		bench_int<uint32_t>(add, mul, fma, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint32_t>(add, mul, fma, div, rsq, xorFunc, shift, rotate, choosery, majority);
   }
   if (i64) {
 		printf("\nRunning int64 tests:\n");
-		bench_int<uint64_t>(add, mul, fma, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint64_t>(add, mul, fma, div, rsq, xorFunc, shift, rotate, choosery, majority);
   }
   if (fp32) {
 		printf("\nRunning FP32 tests:\n");
-		bench_float<float>(add, mul, fma, rsq);
+		bench_float<float>(add, mul, fma, div, rsq);
   }
   if (fp64) {
 		printf("\nRunning FP64 tests:\n");
-		bench_float<double>(add, mul, fma, rsq);
+		bench_float<double>(add, mul, fma, div, rsq);
   }
 }
