@@ -3,7 +3,7 @@ nv: pubBench-nv
 nvidia: nv
 
 # Set number of computes
-nOps ?= 10000
+nOps ?= 1000
 
 %-nv: %.cu
 		nvcc $^ -o $@ -O3 -D nOps=$(nOps)

@@ -25,7 +25,7 @@
 
 // Number of computes must be set at compile time
 #ifndef nOps
-#define nOps 10000
+#define nOps 1000
 #endif
 
 #define DEFAULT_WORKGROUP_SIZE 256
@@ -236,7 +236,7 @@ static void bench_func(void) {
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
-	// Double flop count for FMA operations since FMA does two ops in one instruction
+	// Double flop count for FMA tests since FMA involves two operations, multiply and add
 	std::string s = typeid(Func).name();
 	if(s.find("FMA") != std::string::npos) {  // if Func has FMA in its name
 		totalFlops *= 2;
