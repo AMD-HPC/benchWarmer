@@ -238,7 +238,7 @@ static void bench_func(void) {
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
 	// Double flop count for FMA operations since FMA does two ops in one instruction
 	std::string s = typeid(Func).name();
-	if(s.find("FMA") != std::string::npos) {
+	if(s.find("FMA") != std::string::npos) {  // if Func has FMA in its name
 		totalFlops *= 2;
 	}
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T) * 2.5;
@@ -305,7 +305,7 @@ static void bench_int(bool add, bool mul, bool fma, bool div, bool rsq, bool xor
 	}
 	if(rsq) {
 		printf("  Rsqrt test: ");
-		bench_func<T,FMA<T>>();
+		bench_func<T,Rsqrt<T>>();
 	}
 	if(xorFunc) {
 		printf("  Xor test: ");
