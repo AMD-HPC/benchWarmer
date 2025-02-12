@@ -9,6 +9,7 @@
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_ext.h>
+#include <hip/hip_fp8.h>  // for __half
 
 #define gpu(symbol) hip ## symbol
 
@@ -371,6 +372,7 @@ int main(int argc, char **argv)
 {
 
 	//CLI parsing
+	bool i8 = false, i16 = false, i32 = false, i64 = false, fp16 = false, fp32 = false, fp64 = false;
 	bool add = false, mul = false, muladd = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
 
 	int c, option_index = 0;
@@ -381,6 +383,7 @@ int main(int argc, char **argv)
 					{"int16",   no_argument,   0,  'b' },
 					{"int32",   no_argument,   0,  'c' },
 					{"int64",   no_argument,   0,  'd' },
+					{"fp16",    no_argument,   0,  'v' },
 					{"fp32",    no_argument,   0,  'e' },
 					{"fp64",    no_argument,   0,  'f' },
 					{"int",     no_argument,   0,  'i' },
@@ -424,6 +427,10 @@ int main(int argc, char **argv)
 				i64 = 1;
 				printf("Selected int64 test\n");
 				break;
+			case 'v':
+				fp16 = 1;
+				printf("Selected FP16 test\n");
+				break;
 			case 'e':
 				fp32 = 1;
 				printf("Selected FP32 test\n");
@@ -437,7 +444,7 @@ int main(int argc, char **argv)
 				printf("Selected all int tests\n");
 				break;
 			case 'j':
-				fp32=1, fp64=1;
+				fp16=1, fp32=1, fp64=1;
 				printf("Selected all FP tests\n");
 				break;
 			case 'k':
@@ -495,6 +502,7 @@ int main(int argc, char **argv)
 				printf("\n  --int16, run int16 tests");
 				printf("\n  --int32, run int32 tests");
 				printf("\n  --int64, run int64 tests");
+				printf("\n  --fp16, run fp16 tests\n");
 				printf("\n  --fp32, run fp32 tests");
 				printf("\n  --fp64, run fp64 tests\n");
 
@@ -518,9 +526,9 @@ int main(int argc, char **argv)
 		printf("Selected all operation tests\n");
 		add=1, mul=1, muladd=1, div=1, rsq=1, xorFunc=1, shift=1, rotate=1, choosery=1, majority=1;
 	}
-	if (! (i8 || i16 || i32 || i64 || fp32 || fp64)) {
+	if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
 		printf("Selected all datatype tests\n");
-		i8=1, i16=1, i32=1, i64=1, fp32=1, fp64=1;
+		i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
 	}
   if (i8) {
     printf("\nRunning int8 tests:\n");
@@ -537,6 +545,10 @@ int main(int argc, char **argv)
   if (i64) {
 		printf("\nRunning int64 tests:\n");
 		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+  }
+  if (fp16) {
+		printf("\nRunning FP16 tests:\n");
+		bench_float<__half>(add, mul, muladd, div, rsq);
   }
   if (fp32) {
 		printf("\nRunning FP32 tests:\n");
