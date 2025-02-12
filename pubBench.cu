@@ -2,6 +2,7 @@
 
 #include <cuda.h>
 #include <cuda_runtime.h>
+#include <cuda_fp16.h>  // for __half
 
 #define gpu(symbol) cuda ## symbol
 
@@ -9,7 +10,7 @@
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_ext.h>
-#include <hip/hip_fp8.h>  // for __half
+#include <hip/hip_fp16.h>  // for __half
 
 #define gpu(symbol) hip ## symbol
 
