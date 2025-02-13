@@ -226,6 +226,32 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 	}
 }
 
+// AMD hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
+template<int n, class Func>
+__global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
+{
+	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
+	const uint32_t nThreads  = gridDim.x * blockDim.x;
+	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
+
+	float2 *a;
+	a = &buf[gid];
+	float2 x = {2.2f,2.2f};
+	float2 y = {1.2f,1.2f};
+	Func func;
+
+	// Unroll to prevent the compiler from optimizing out the work
+	for(uint32_t offset=0; offset < nSize; offset += nThreads)
+	{
+		for(int j=0; j<n; j++)
+		{
+			// Two different write locations to force the compiler to complete every operation
+			x = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
+		}
+	}
+	a[0] = x;
+}
+
 template<class T, class Func>
 static void bench_func(void) {
   
@@ -245,8 +271,13 @@ static void bench_func(void) {
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T) * 2.5;
 
   assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
-
-  throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+	
+	// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
+	if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos || s.find("Mul") != std::string::npos)) {
+    packed_throughput_kernel<nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+	} else {
+		throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+	}
   gpu(DeviceSynchronize());
 
 	// Timing data
@@ -262,9 +293,16 @@ static void bench_func(void) {
 	// Run experiments
   for (int n=0; n<numExperiments; n++)
   {
-    initTimeEvents(start, stop);
-		throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
-    stopTimeEvents(eventMs, start, stop);
+		// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
+		if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos || s.find("Mul") != std::string::npos)) {
+			initTimeEvents(start, stop);
+			packed_throughput_kernel<nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+			stopTimeEvents(eventMs, start, stop);
+		} else {
+			initTimeEvents(start, stop);
+			throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+			stopTimeEvents(eventMs, start, stop);
+		}
 
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
@@ -346,7 +384,7 @@ static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool 
 
 
 template<class T>
-static void bench_float(bool add, bool mul, bool muladd, bool div, bool rsq) {
+static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq) {
 	if(add) {
 		printf("  Add test: ");
 		bench_func<T,Add<T>>();
@@ -549,14 +587,14 @@ int main(int argc, char **argv)
   }
   if (fp16) {
 		printf("\nRunning FP16 tests:\n");
-		bench_float<__half>(add, mul, muladd, div, rsq);
+		bench_fp<__half>(add, mul, muladd, div, rsq);
   }
   if (fp32) {
 		printf("\nRunning FP32 tests:\n");
-		bench_float<float>(add, mul, muladd, div, rsq);
+		bench_fp<float>(add, mul, muladd, div, rsq);
   }
   if (fp64) {
 		printf("\nRunning FP64 tests:\n");
-		bench_float<double>(add, mul, muladd, div, rsq);
+		bench_fp<double>(add, mul, muladd, div, rsq);
   }
 }
