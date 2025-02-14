@@ -1,5 +1,5 @@
-# PubBench
-PubBench (name pending) is a synthetic microbenchmark suite that measures throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
+# benchWarmer
+benchWarmer is a synthetic microbenchmark suite that measures throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
 
 ## Build
 For AMD architectures:
@@ -13,9 +13,9 @@ For NVIDIA architectures:
 The optional `nOps` argument (1000 by default) controls how many operations that will be computed on each piece of data. By modifying this number, one can adjust the Arithmetic Intensity of the workload.
 
 ## Run
-`./pubBench-amd <args>`
+`./benchWarmer-amd <args>`
 or
-`./pubBench-nv <args>`
+`./benchWarmer-nv <args>`
 ```
 Arguments:
  -h, show this help message and exit
@@ -46,7 +46,7 @@ Arguments:
   --majority, run Majority tests only
 ```
 ### Sample Run
-`./pubBench-amd --add --mul --muladd --div --rsqrt`
+`./benchWarmer-amd --add --mul --muladd --div --rsqrt`
 ```
 Running int8 tests:
   Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
