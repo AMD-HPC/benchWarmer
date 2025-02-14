@@ -273,8 +273,12 @@ static void bench_func(void) {
   assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
 	
 	// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
-	if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos || s.find("Mul") != std::string::npos)) {
-    packed_throughput_kernel<nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+	if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
+    packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+  } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
+    packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+  } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+    packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 	} else {
 		throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 	}
@@ -294,15 +298,23 @@ static void bench_func(void) {
   for (int n=0; n<numExperiments; n++)
   {
 		// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
-		if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos || s.find("Mul") != std::string::npos)) {
+    if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
 			initTimeEvents(start, stop);
-			packed_throughput_kernel<nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+      packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-		} else {
+    } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
 			initTimeEvents(start, stop);
-			throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+      packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-		}
+    } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+			initTimeEvents(start, stop);
+      packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
+			stopTimeEvents(eventMs, start, stop);
+    } else {
+			initTimeEvents(start, stop);
+      throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+			stopTimeEvents(eventMs, start, stop);
+    }
 
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
