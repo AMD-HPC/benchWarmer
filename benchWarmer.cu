@@ -589,7 +589,7 @@ int main(int argc, char **argv)
 				break;
 			case 'h':
 			default:
-				printf("Usage: ./pubBench <args>\n");
+				printf("Usage: ./benchWarmer <args>\n");
 				printf("\nArguments:\n");
 				printf(" -h, show this help message and exit\n");
 				printf("\n -a, run all tests (all datatypes, all operations)\n");

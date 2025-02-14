@@ -1,5 +1,5 @@
-amd: pubBench-amd
-nv: pubBench-nv
+amd: benchWarmer-amd
+nv: benchWarmer-nv
 nvidia: nv
 
 # Set number of computes
@@ -11,4 +11,4 @@ nOps ?= 1000
 		hipcc -std=c++11 $^ -o $@ -O3 -D nOps=$(nOps)
 		
 clean: 
-	rm pubBench-*
+	rm benchWarmer-*
