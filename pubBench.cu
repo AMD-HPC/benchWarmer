@@ -217,6 +217,33 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 	for(uint32_t offset=0; offset < nSize; offset += nThreads)
 	{
 		#pragma unroll
+		for(int j=0; j<n; j++)
+		{
+			// Two different write locations to force the compiler to complete every operation
+			x = func(a[offset], x, y);
+		}
+	}
+  a[0] = x;
+}
+
+template<typename T, int n, class Func>
+__global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
+{
+	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
+	const uint32_t nThreads  = gridDim.x * blockDim.x;
+	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
+
+	T *a;
+	a = &buf[gid];
+	T x = (T)2.2;
+	T y = (T)1.2;
+	Func func;
+
+	// Unroll to prevent the compiler from optimizing out the work
+	#pragma unroll 1
+	for(uint32_t offset=0; offset < nSize; offset += nThreads)
+	{
+		#pragma unroll
 		for(int j=0; j<n; j+=2)
 		{
 			// Two different write locations to force the compiler to complete every operation
@@ -272,16 +299,27 @@ static void bench_func(void) {
 
   assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
 	
-	// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
-	if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
+
+  // WARMUP KERNEL
+  // packed_throughput_kernel: FP32 Add, Mul, MulAdd
+  // throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+  // throughput_kernel: All other tests
+  if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
+    // FP32 MulAdd
     packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
+    // FP32 Add
     packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+    // FP32 Mul
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-	} else {
-		throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
-	}
+  } else if ((strcmp(typeid(T).name(), "h") == 0 || strcmp(typeid(T).name(), "t") == 0 || strcmp(typeid(T).name(), "j") == 0 || strcmp(typeid(T).name(), "m") == 0) && (s.find("3Add") != std::string::npos || s.find("MulI") != std::string::npos || s.find("Rsqrt") != std::string::npos)) {
+    // Rsqrt, Integer Add, Mul
+    throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+  } else {
+    // Every other test
+    throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+  }
   gpu(DeviceSynchronize());
 
 	// Timing data
@@ -297,20 +335,31 @@ static void bench_func(void) {
 	// Run experiments
   for (int n=0; n<numExperiments; n++)
   {
-		// Run the kernel with packed instructions for FP32 Add, Mul, MulAdd
+		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
+		// throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+		// throughput_kernel: All other tests
     if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
+      // FP32 MulAdd
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
+      // FP32 Add
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+      // FP32 Mul
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
+    } else if (s.find("Rsqrt") != std::string::npos || ((strcmp(typeid(T).name(), "h") == 0 || strcmp(typeid(T).name(), "t") == 0 || strcmp(typeid(T).name(), "j") == 0 || strcmp(typeid(T).name(), "m") == 0) && (s.find("3Add") != std::string::npos || s.find("MulI") != std::string::npos))) {
+      // Rsqrt, Integer Add, Mul
+			initTimeEvents(start, stop);
+      throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+			stopTimeEvents(eventMs, start, stop);
     } else {
+      // Every other test
 			initTimeEvents(start, stop);
       throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
