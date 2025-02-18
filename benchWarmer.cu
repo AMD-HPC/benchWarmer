@@ -80,28 +80,6 @@ struct Xor {
 };
 
 template<class T>
-struct Choosery {
-  __device__ T operator()(T x, T y, T z) {
-    return x ^ ((x ^ y) & z); // (x & ~z) | (y & z)
-  }
-};
-
-template<class T>
-struct Majority1 {
-  __device__ T operator()(T x, T y, T z) {
-    Choosery<T> ch;
-    return ch(x, y, (x ^ z));
-  }
-};
-
-template<class T>
-struct Majority2 {
-  __device__ T operator()(T x, T y, T z) {
-    return (x & y) ^ ((x ^ y) & z);
-  }
-};
-
-template<class T>
 struct ShiftLeft {
   __device__ T operator()(T x, T y, T z) {
     return x << y;
@@ -386,7 +364,7 @@ static void bench_func(void) {
 }
 
 template<class T>
-static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority) {
+static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate) {
 	if(add) {
 		printf("  Add test: ");
 		bench_func<T,Add<T>>();
@@ -431,16 +409,6 @@ static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool 
 		printf("  RotateRightImm test: ");
 		bench_func<T,RotateRightImm<T,3>>();
 	}
-	if(choosery) {
-		printf("  Choosery test: ");
-		bench_func<T,Choosery<T>>();
-	}
-	if(majority) {
-		printf("  Majority1 test: ");
-		bench_func<T,Majority1<T>>();
-		printf("  Majority2 test: ");
-		bench_func<T,Majority2<T>>();
-	}
 }
 
 
@@ -473,7 +441,7 @@ int main(int argc, char **argv)
 
 	//CLI parsing
 	bool i8 = false, i16 = false, i32 = false, i64 = false, fp16 = false, fp32 = false, fp64 = false;
-	bool add = false, mul = false, muladd = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
+	bool add = false, mul = false, muladd = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false;
 
 	int c, option_index = 0;
 	static struct option long_options[] = {
@@ -496,8 +464,6 @@ int main(int argc, char **argv)
 					{"xor",     no_argument,   0,  's' },
 					{"shift",   no_argument,   0,  'o' },
 					{"rotate",  no_argument,   0,  'p' },
-					{"choosery",no_argument,   0,  'q' },
-					{"majority",no_argument,   0,  'r' },
 					{0,         0,             0,  0   }
 			};
 	while ((c = getopt_long_only(argc, argv, "agbcdefij", long_options, &option_index)) != -1){
@@ -579,14 +545,6 @@ int main(int argc, char **argv)
 				rotate = 1;
 				printf("Selected Rotate test\n");
 				break;
-			case 'q':
-				choosery = 1;
-				printf("Selected Choosery test\n");
-				break;
-			case 'r':
-				majority = 1;
-				printf("Selected Majority test\n");
-				break;
 			case 'h':
 			default:
 				printf("Usage: ./benchWarmer <args>\n");
@@ -601,8 +559,8 @@ int main(int argc, char **argv)
 				printf("\n  --int8, run int8 tests");
 				printf("\n  --int16, run int16 tests");
 				printf("\n  --int32, run int32 tests");
-				printf("\n  --int64, run int64 tests");
-				printf("\n  --fp16, run fp16 tests\n");
+				printf("\n  --int64, run int64 tests\n");
+				printf("\n  --fp16, run fp16 tests");
 				printf("\n  --fp32, run fp32 tests");
 				printf("\n  --fp64, run fp64 tests\n");
 
@@ -615,16 +573,14 @@ int main(int argc, char **argv)
 				printf("\n  --xor, run XOR tests only");
 				printf("\n  --shift, run Shift tests only");
 				printf("\n  --rotate, run Rotate tests only");
-				printf("\n  --choosery, run Choosery tests only");
-				printf("\n  --majority, run Majority tests only");
 				printf("\n\n");
 				exit(1);
 		}
 	}
 	// If no operation is selected, do all of them
-	if (! (add || mul || muladd || div || rsq || xorFunc || shift || rotate || choosery || majority)) {
+	if (! (add || mul || muladd || div || rsq || xorFunc || shift || rotate)) {
 		printf("Selected all operation tests\n");
-		add=1, mul=1, muladd=1, div=1, rsq=1, xorFunc=1, shift=1, rotate=1, choosery=1, majority=1;
+		add=1, mul=1, muladd=1, div=1, rsq=1, xorFunc=1, shift=1, rotate=1;
 	}
 	if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
 		printf("Selected all datatype tests\n");
@@ -632,19 +588,19 @@ int main(int argc, char **argv)
 	}
   if (i8) {
     printf("\nRunning int8 tests:\n");
-    bench_int<uint8_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+    bench_int<uint8_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate);
   }
   if (i16) {
 		printf("\nRunning int16 tests:\n");
-		bench_int<uint16_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint16_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate);
   }
   if (i32) {
 		printf("\nRunning int32 tests:\n");
-		bench_int<uint32_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint32_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate);
   }
   if (i64) {
 		printf("\nRunning int64 tests:\n");
-		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate);
   }
   if (fp16) {
 		printf("\nRunning FP16 tests:\n");

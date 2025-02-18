@@ -16,6 +16,7 @@ The optional `nOps` argument (1000 by default) controls how many operations that
 `./benchWarmer-amd <args>`
 or
 `./benchWarmer-nv <args>`
+
 ```
 Arguments:
  -h, show this help message and exit
@@ -30,6 +31,8 @@ Arguments:
   --int16, run int16 tests
   --int32, run int32 tests
   --int64, run int64 tests
+
+  --fp16, run fp16 tests
   --fp32, run fp32 tests
   --fp64, run fp64 tests
 
@@ -42,9 +45,8 @@ Arguments:
   --xor, run XOR tests only
   --shift, run Shift tests only
   --rotate, run Rotate tests only
-  --choosery, run Choosery tests only
-  --majority, run Majority tests only
 ```
+
 ### Sample Run
 `./benchWarmer-amd --add --mul --muladd --div --rsqrt`
 ```
