@@ -295,7 +295,7 @@ static void bench_func(void) {
 	if(s.find("MulAdd") != std::string::npos) {  // if Func has MulAdd in its name
 		totalFlops *= 2;
 	}
-  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T) * 2.5;
+  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
 	
