@@ -20,9 +20,11 @@
 #include <math.h>
 #include <vector>
 #include <getopt.h>
+#include <unordered_map>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <fstream>
 #include <assert.h>
 
 // Number of computes must be set at compile time
@@ -281,7 +283,41 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 
 template<class T, class Func>
 static void bench_func(void) {
-  
+	// print value of Func and T
+	std::string s = typeid(Func).name();
+	std::string typeName = typeid(T).name();
+
+	printf("Func name\n");
+	printf("%s\n", typeid(Func).name());
+	printf("T name\n");
+	printf("%s\n", typeid(T).name());
+
+	float AI_HBM_ADD[8] = {0};
+	float AI_HBM_MUL[8] = {0};
+	float AI_HBM_MULADD[8] = {0};
+	float AI_HBM_DIV[8] = {0};
+	float AI_HBM_RSQ[8] = {0};
+
+  std::unordered_map<std::string, int> indexMap = {
+    {"h", 0},  // INT_8
+    {"t", 1},  // INT_16
+    {"j", 2},  // INT_32
+    {"m", 3},  // INT_64
+    {"6__half", 4},  // FP_16
+    {"f", 5},  // FP_32
+    {"d", 6}   // FP_64
+  };
+
+	std::unordered_map<int, std::string> opMap = {
+    {0, "INT8"},  // INT_8
+		{1, "INT16"},  // INT_16
+		{2, "INT32"},  // INT_32
+		{3, "INT64"},  // INT_64
+		{4, "FP16"},  // FP_8
+		{5, "FP32"},  // FP_16
+		{6, "FP64"},  // FP_32
+  };
+
   void *memBlock;
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
@@ -291,7 +327,7 @@ static void bench_func(void) {
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
 	// Double flop count for MulAdd tests since MulAdd involves two operations, multiply and add
-	std::string s = typeid(Func).name();
+	// std::string s = typeid(Func).name();
 	if(s.find("MulAdd") != std::string::npos) {  // if Func has MulAdd in its name
 		totalFlops *= 2;
 	}
@@ -373,13 +409,88 @@ static void bench_func(void) {
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
 
+	float *AI_HBM = nullptr;
+  if (s.find("Add") != std::string::npos) {
+    AI_HBM = AI_HBM_ADD;
+  } else if (s.find("Mul") != std::string::npos) {
+    AI_HBM = AI_HBM_MUL;
+  } else if (s.find("MulAdd") != std::string::npos) {
+    AI_HBM = AI_HBM_MULADD;
+  } else if (s.find("Div") != std::string::npos) {
+    AI_HBM = AI_HBM_DIV;
+  } else if (s.find("Rsqrt") != std::string::npos) {
+    AI_HBM = AI_HBM_RSQ;
+  }
+
+	// std::string typeName = typeid(T).name();
+	float AI = (float)totalFlops / (float)totalBytes;
+  if (AI_HBM != nullptr && indexMap.find(typeName) != indexMap.end()) {
+		printf("Assigning value to array!");
+    AI_HBM[indexMap[typeName]] = AI;
+  }
+	
+	// if (opTypeMap.find(opType) != opTypeMap.end()) {
+  //   AI_HBM_ADD[opTypeMap[opType]] = (float)totalFlops / (float)totalBytes;
+  // }
+
 	// Print output
   printf("workgroupSize:%d, workgroups:%d, nThreads: %lu, nSize: %d, experiments: %d\n",
       workgroupSize, numWorkgroups, nThreads, nSize, numExperiments);
   printf("    Total FLOPS=%lu, total bytes accessed=%lu, AI=%f, mean duration=%.3f ms\n\n",
-      totalFlops, totalBytes, ((float)totalFlops/(float)totalBytes), meanDuration);
+      totalFlops, totalBytes, AI, meanDuration);
   printf("    Mean throughput=%f GFLOPs/sec, stdev=%.3f GFLOPs/s, 95%% Confidence Interval: [%.3f, %.3f]\n\n",
       meanThroughput, stdevThroughput, meanThroughput - confidenceThroughput, meanThroughput + confidenceThroughput);
+
+	std::ifstream infile("pubbench_results.csv");
+	bool fileIsEmpty = infile.peek() == std::ifstream::traits_type::eof();
+	infile.close();
+
+	std::ofstream csvFile;
+	csvFile.open("pubbench_results.csv", std::ios::app);  // Open in append mode
+	if (csvFile.is_open()) {
+		if (fileIsEmpty) {
+			csvFile << "Kernel,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
+			for (int i = 0; i < 7; ++i) {
+				csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
+			}
+			for (int i = 0; i < 7; ++i) {
+				csvFile << "AI_HBM_MUL_" << opMap[i] << ",";
+			}
+			for (int i = 0; i < 7; ++i) {
+				csvFile << "AI_HBM_MULADD_" << opMap[i] << ",";
+			}
+			for (int i = 0; i < 7; ++i) {
+				csvFile << "AI_HBM_DIV_" << opMap[i] << ",";
+			}
+			for (int i = 0; i < 7; ++i) {
+				csvFile << "AI_HBM_RSQ_" << opMap[i] << ",";
+			}
+			csvFile << "AverageSec,PERF,STDDEV,CI\n";
+		}
+		csvFile << "Test," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
+						<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
+		for (int i = 0; i < 7; ++i) {
+			csvFile << AI_HBM_ADD[i] << ",";
+		}
+		for (int i = 0; i < 7; ++i) {
+			csvFile << AI_HBM_MUL[i] << ",";
+		}
+		for (int i = 0; i < 7; ++i) {
+			csvFile << AI_HBM_MULADD[i] << ",";
+		}
+		for (int i = 0; i < 7; ++i) {
+			csvFile << AI_HBM_DIV[i] << ",";
+		}
+		for (int i = 0; i < 7; ++i) {
+			csvFile << AI_HBM_RSQ[i] << ",";
+		}
+		csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
+		csvFile.close();
+		printf("Results written to pubbench_results.csv\n");
+	} else {
+		printf("Error opening pubbench_results.csv");
+	}
+	  
 
   // Clean up time
   gpu(Free(memBlock));
