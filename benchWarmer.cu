@@ -204,6 +204,8 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
   a[0] = x;
 }
 
+// This kernel is similar to throughput_kernel, but it employs a workaround to prevent
+// the compiler from optimizing out the work for some datatypes/instructions
 template<typename T, int n, class Func>
 __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 {
@@ -231,7 +233,7 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 	}
 }
 
-// AMD hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
+// MI200 hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
 template<int n, class Func>
 __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 {
@@ -363,6 +365,7 @@ static void bench_func(void) {
   gpu(Free(memBlock));
 }
 
+// Run relevent tests for integer types
 template<class T>
 static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate) {
 	if(add) {
@@ -412,6 +415,7 @@ static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool 
 }
 
 
+// Run relevent tests for floating point types
 template<class T>
 static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq) {
 	if(add) {
