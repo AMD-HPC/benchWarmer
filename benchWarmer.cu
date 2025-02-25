@@ -32,6 +32,8 @@
 #define nOps 1000
 #endif
 
+std::string GPU;
+
 #define DEFAULT_WORKGROUP_SIZE 256
 #define DEFAULT_WORKGROUPS 16384
 #define DEFAULT_NUM_EXPERIMENTS 10
@@ -408,26 +410,34 @@ static void bench_func(void) {
   // Calculate summary statistics
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
-
+  std::string target_col = " ";
 	float *AI_HBM = nullptr;
-  if (s.find("Add") != std::string::npos) {
-    AI_HBM = AI_HBM_ADD;
+  if (s.find("MulAdd") != std::string::npos) {
+	printf("Found MulAdd in Func name!");
+	AI_HBM = AI_HBM_MULADD;
+	target_col = "AI_HBM_MULADD";
   } else if (s.find("Mul") != std::string::npos) {
     AI_HBM = AI_HBM_MUL;
-  } else if (s.find("MulAdd") != std::string::npos) {
-    AI_HBM = AI_HBM_MULADD;
+	target_col = "AI_HBM_MUL";
+  } else if (s.find("Add") != std::string::npos) {
+	AI_HBM = AI_HBM_ADD;
+	target_col = "AI_HBM_ADD";
   } else if (s.find("Div") != std::string::npos) {
     AI_HBM = AI_HBM_DIV;
+	target_col = "AI_HBM_DIV";
   } else if (s.find("Rsqrt") != std::string::npos) {
     AI_HBM = AI_HBM_RSQ;
+	target_col = "AI_HBM_RSQ";
   }
 
 	// std::string typeName = typeid(T).name();
 	float AI = (float)totalFlops / (float)totalBytes;
   if (AI_HBM != nullptr && indexMap.find(typeName) != indexMap.end()) {
-		printf("Assigning value to array!");
+	printf("Assigning value to array!");
     AI_HBM[indexMap[typeName]] = AI;
   }
+  std::string data_type = opMap[indexMap[typeName]];
+  target_col = target_col + '_' + data_type;
 	
 	// if (opTypeMap.find(opType) != opTypeMap.end()) {
   //   AI_HBM_ADD[opTypeMap[opType]] = (float)totalFlops / (float)totalBytes;
@@ -440,16 +450,17 @@ static void bench_func(void) {
       totalFlops, totalBytes, AI, meanDuration);
   printf("    Mean throughput=%f GFLOPs/sec, stdev=%.3f GFLOPs/s, 95%% Confidence Interval: [%.3f, %.3f]\n\n",
       meanThroughput, stdevThroughput, meanThroughput - confidenceThroughput, meanThroughput + confidenceThroughput);
-
-	std::ifstream infile("pubbench_results.csv");
+	// std::cout << GPU;
+	std::string filename = "pubbench_results_" + GPU + ".csv";
+	std::ifstream infile(filename);
 	bool fileIsEmpty = infile.peek() == std::ifstream::traits_type::eof();
 	infile.close();
 
 	std::ofstream csvFile;
-	csvFile.open("pubbench_results.csv", std::ios::app);  // Open in append mode
+	csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
 	if (csvFile.is_open()) {
 		if (fileIsEmpty) {
-			csvFile << "Kernel,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
+			csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
 			for (int i = 0; i < 7; ++i) {
 				csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
 			}
@@ -467,7 +478,7 @@ static void bench_func(void) {
 			}
 			csvFile << "AverageSec,PERF,STDDEV,CI\n";
 		}
-		csvFile << "Test," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
+		csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
 						<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
 		for (int i = 0; i < 7; ++i) {
 			csvFile << AI_HBM_ADD[i] << ",";
@@ -486,9 +497,9 @@ static void bench_func(void) {
 		}
 		csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
 		csvFile.close();
-		printf("Results written to pubbench_results.csv\n");
+		printf("Results written to %s\n", filename.c_str());
 	} else {
-		printf("Error opening pubbench_results.csv");
+		printf("Error opening %s\n", filename.c_str());
 	}
 	  
 
@@ -601,7 +612,7 @@ int main(int argc, char **argv)
 					{"fp",      no_argument,   0,  'j' },
 					{"add",     no_argument,   0,  'k' },
 					{"mul",     no_argument,   0,  'l' },
-					{"muladd",     no_argument,   0,  'm' },
+					{"muladd",  no_argument,   0,  'm' },
 					{"div",     no_argument,   0,  't' },
 					{"rsqrt",   no_argument,   0,  'n' },
 					{"xor",     no_argument,   0,  's' },
@@ -609,9 +620,10 @@ int main(int argc, char **argv)
 					{"rotate",  no_argument,   0,  'p' },
 					{"choosery",no_argument,   0,  'q' },
 					{"majority",no_argument,   0,  'r' },
+					{"gpu",     required_argument, 0,  'u' },
 					{0,         0,             0,  0   }
 			};
-	while ((c = getopt_long_only(argc, argv, "agbcdefij", long_options, &option_index)) != -1){
+	while ((c = getopt_long_only(argc, argv, "agbcdefiju:", long_options, &option_index)) != -1){
 		if (c == -1)
 			break;
 
@@ -693,6 +705,10 @@ int main(int argc, char **argv)
 			case 'q':
 				choosery = 1;
 				printf("Selected Choosery test\n");
+				break;
+			case 'u':
+				printf("Selected GPU: %s\n", optarg);
+				GPU = optarg;
 				break;
 			case 'r':
 				majority = 1;
