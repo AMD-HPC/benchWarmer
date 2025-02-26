@@ -478,7 +478,7 @@ int main(int argc, char **argv)
 		{
 			case 'a':
 				i8=1, i16=1, i32=1, i64=1;
-				fp32=1, fp64=1;
+				fp16=1, fp32=1, fp64=1;
 				printf("Selected all tests\n");
 				break;
 			case 'g':
