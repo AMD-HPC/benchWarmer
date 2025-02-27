@@ -25,6 +25,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fstream>
+// #include <iostream>
 #include <assert.h>
 
 // Number of computes must be set at compile time
@@ -343,19 +344,24 @@ static void bench_func(void) {
   // throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
   // throughput_kernel: All other tests
   if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
-    // FP32 MulAdd
+	printf("going through kernel\n");
+	// std::cerr << "going through kernel";
     packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
     // FP32 Add
+	printf("going through kernel\n");
     packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
     // FP32 Mul
+	printf("going through kernel\n");
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if ((strcmp(typeid(T).name(), "h") == 0 || strcmp(typeid(T).name(), "t") == 0 || strcmp(typeid(T).name(), "j") == 0 || strcmp(typeid(T).name(), "m") == 0) && (s.find("3Add") != std::string::npos || s.find("MulI") != std::string::npos || s.find("Rsqrt") != std::string::npos)) {
     // Rsqrt, Integer Add, Mul
+	printf("going through kernel\n");
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
+	printf("going through kernel\n");
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
