@@ -1,0 +1,371 @@
+Selected all tests
+Selected all operation tests
+
+Running int8 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=14.214 ms
+
+    Mean throughput=75541.421875 GFLOPs/sec, stdev=156.066 GFLOPs/s, 95% Confidence Interval: [75444.695, 75638.148]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=14.191 ms
+
+    Mean throughput=75661.203125 GFLOPs/sec, stdev=32.129 GFLOPs/s, 95% Confidence Interval: [75641.289, 75681.117]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=2147483648000, total bytes accessed=1073741824, AI=2000.000000, mean duration=27.440 ms
+
+    Mean throughput=78260.210938 GFLOPs/sec, stdev=14.946 GFLOPs/s, 95% Confidence Interval: [78250.945, 78269.477]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=247.248 ms
+
+    Mean throughput=4344.126465 GFLOPs/sec, stdev=76.244 GFLOPs/s, 95% Confidence Interval: [4296.870, 4391.383]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=113.849 ms
+
+    Mean throughput=9437.135742 GFLOPs/sec, stdev=227.679 GFLOPs/s, 95% Confidence Interval: [9296.020, 9578.252]
+
+  Xor test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=0.015 ms
+
+    Mean throughput=74263216.000000 GFLOPs/sec, stdev=13204129.000 GFLOPs/s, 95% Confidence Interval: [66079212.000, 82447216.000]
+
+  ShiftLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=27.193 ms
+
+    Mean throughput=39486.242188 GFLOPs/sec, stdev=3.280 GFLOPs/s, 95% Confidence Interval: [39484.211, 39488.273]
+
+  ShiftRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=14.142 ms
+
+    Mean throughput=75924.265625 GFLOPs/sec, stdev=25.056 GFLOPs/s, 95% Confidence Interval: [75908.734, 75939.797]
+
+  ShiftLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=0.116 ms
+
+    Mean throughput=9272326.000000 GFLOPs/sec, stdev=224306.484 GFLOPs/s, 95% Confidence Interval: [9133299.000, 9411353.000]
+
+  ShiftRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=0.117 ms
+
+    Mean throughput=9208148.000000 GFLOPs/sec, stdev=194623.984 GFLOPs/s, 95% Confidence Interval: [9087519.000, 9328777.000]
+
+  RotateLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=85.221 ms
+
+    Mean throughput=12614.986328 GFLOPs/sec, stdev=422.157 GFLOPs/s, 95% Confidence Interval: [12353.331, 12876.642]
+
+  RotateRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=84.142 ms
+
+    Mean throughput=12761.051758 GFLOPs/sec, stdev=5.241 GFLOPs/s, 95% Confidence Interval: [12757.803, 12764.301]
+
+  RotateLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=0.116 ms
+
+    Mean throughput=9245146.000000 GFLOPs/sec, stdev=126568.906 GFLOPs/s, 95% Confidence Interval: [9166698.000, 9323594.000]
+
+  RotateRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 1073741824, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=0.117 ms
+
+    Mean throughput=9183681.000000 GFLOPs/sec, stdev=298714.062 GFLOPs/s, 95% Confidence Interval: [8998536.000, 9368826.000]
+
+
+Running int16 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=7.213 ms
+
+    Mean throughput=74434.109375 GFLOPs/sec, stdev=747.947 GFLOPs/s, 95% Confidence Interval: [73970.523, 74897.695]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=7.122 ms
+
+    Mean throughput=75383.335938 GFLOPs/sec, stdev=116.978 GFLOPs/s, 95% Confidence Interval: [75310.836, 75455.836]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=13.724 ms
+
+    Mean throughput=78235.484375 GFLOPs/sec, stdev=20.496 GFLOPs/s, 95% Confidence Interval: [78222.781, 78248.188]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=126.590 ms
+
+    Mean throughput=4241.027832 GFLOPs/sec, stdev=0.990 GFLOPs/s, 95% Confidence Interval: [4240.415, 4241.641]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=56.464 ms
+
+    Mean throughput=9508.170898 GFLOPs/sec, stdev=1.770 GFLOPs/s, 95% Confidence Interval: [9507.074, 9509.268]
+
+  Xor test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=0.014 ms
+
+    Mean throughput=39933224.000000 GFLOPs/sec, stdev=2915467.000 GFLOPs/s, 95% Confidence Interval: [38126200.000, 41740248.000]
+
+  ShiftLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=13.601 ms
+
+    Mean throughput=39472.671875 GFLOPs/sec, stdev=6.608 GFLOPs/s, 95% Confidence Interval: [39468.574, 39476.770]
+
+  ShiftRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=7.096 ms
+
+    Mean throughput=75662.226562 GFLOPs/sec, stdev=127.046 GFLOPs/s, 95% Confidence Interval: [75583.484, 75740.969]
+
+  ShiftLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=0.061 ms
+
+    Mean throughput=8849458.000000 GFLOPs/sec, stdev=187734.547 GFLOPs/s, 95% Confidence Interval: [8733099.000, 8965817.000]
+
+  ShiftRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=0.060 ms
+
+    Mean throughput=8931321.000000 GFLOPs/sec, stdev=123193.711 GFLOPs/s, 95% Confidence Interval: [8854965.000, 9007677.000]
+
+  RotateLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=29.098 ms
+
+    Mean throughput=18601.876953 GFLOPs/sec, stdev=1488.844 GFLOPs/s, 95% Confidence Interval: [17679.082, 19524.672]
+
+  RotateRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=28.108 ms
+
+    Mean throughput=19100.093750 GFLOPs/sec, stdev=3.120 GFLOPs/s, 95% Confidence Interval: [19098.160, 19102.027]
+
+  RotateLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=0.060 ms
+
+    Mean throughput=8913515.000000 GFLOPs/sec, stdev=142024.812 GFLOPs/s, 95% Confidence Interval: [8825487.000, 9001543.000]
+
+  RotateRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=0.060 ms
+
+    Mean throughput=8894645.000000 GFLOPs/sec, stdev=262886.969 GFLOPs/s, 95% Confidence Interval: [8731706.000, 9057584.000]
+
+
+Running int32 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=4.041 ms
+
+    Mean throughput=66450.539062 GFLOPs/sec, stdev=1081.817 GFLOPs/s, 95% Confidence Interval: [65780.023, 67121.055]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=3.709 ms
+
+    Mean throughput=72371.125000 GFLOPs/sec, stdev=447.377 GFLOPs/s, 95% Confidence Interval: [72093.836, 72648.414]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=6.938 ms
+
+    Mean throughput=77384.046875 GFLOPs/sec, stdev=10.582 GFLOPs/s, 95% Confidence Interval: [77377.484, 77390.609]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=119.999 ms
+
+    Mean throughput=2236.990723 GFLOPs/sec, stdev=2.048 GFLOPs/s, 95% Confidence Interval: [2235.721, 2238.260]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=28.180 ms
+
+    Mean throughput=9525.652344 GFLOPs/sec, stdev=0.958 GFLOPs/s, 95% Confidence Interval: [9525.059, 9526.246]
+
+  Xor test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=0.015 ms
+
+    Mean throughput=18663900.000000 GFLOPs/sec, stdev=2655971.250 GFLOPs/s, 95% Confidence Interval: [17017712.000, 20310088.000]
+
+  ShiftLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=6.804 ms
+
+    Mean throughput=39450.714844 GFLOPs/sec, stdev=9.786 GFLOPs/s, 95% Confidence Interval: [39444.648, 39456.781]
+
+  ShiftRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=3.576 ms
+
+    Mean throughput=75068.703125 GFLOPs/sec, stdev=761.828 GFLOPs/s, 95% Confidence Interval: [74596.516, 75540.891]
+
+  ShiftLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=0.033 ms
+
+    Mean throughput=8204388.000000 GFLOPs/sec, stdev=161589.672 GFLOPs/s, 95% Confidence Interval: [8104233.500, 8304542.500]
+
+  ShiftRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=0.033 ms
+
+    Mean throughput=8206114.500000 GFLOPs/sec, stdev=200506.969 GFLOPs/s, 95% Confidence Interval: [8081839.000, 8330390.000]
+
+  RotateLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=13.668 ms
+
+    Mean throughput=19639.613281 GFLOPs/sec, stdev=2.895 GFLOPs/s, 95% Confidence Interval: [19637.818, 19641.408]
+
+  RotateRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=6.852 ms
+
+    Mean throughput=39178.617188 GFLOPs/sec, stdev=12.575 GFLOPs/s, 95% Confidence Interval: [39170.824, 39186.410]
+
+  RotateLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=0.033 ms
+
+    Mean throughput=8196816.000000 GFLOPs/sec, stdev=193482.234 GFLOPs/s, 95% Confidence Interval: [8076894.500, 8316737.500]
+
+  RotateRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=0.033 ms
+
+    Mean throughput=8132309.500000 GFLOPs/sec, stdev=217644.953 GFLOPs/s, 95% Confidence Interval: [7997412.000, 8267207.000]
+
+
+Running int64 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=4.044 ms
+
+    Mean throughput=33205.574219 GFLOPs/sec, stdev=771.555 GFLOPs/s, 95% Confidence Interval: [32727.359, 33683.789]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=13.731 ms
+
+    Mean throughput=9774.917969 GFLOPs/sec, stdev=1.218 GFLOPs/s, 95% Confidence Interval: [9774.163, 9775.673]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=13.736 ms
+
+    Mean throughput=19542.472656 GFLOPs/sec, stdev=3.725 GFLOPs/s, 95% Confidence Interval: [19540.164, 19544.781]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=68.877 ms
+
+    Mean throughput=1952.231812 GFLOPs/sec, stdev=78.894 GFLOPs/s, 95% Confidence Interval: [1903.333, 2001.131]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=31.303 ms
+
+    Mean throughput=4287.657227 GFLOPs/sec, stdev=0.458 GFLOPs/s, 95% Confidence Interval: [4287.373, 4287.941]
+
+  Xor test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=0.015 ms
+
+    Mean throughput=8856088.000000 GFLOPs/sec, stdev=424628.812 GFLOPs/s, 95% Confidence Interval: [8592900.000, 9119276.000]
+
+  ShiftLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=2.002 ms
+
+    Mean throughput=67096.250000 GFLOPs/sec, stdev=1952.218 GFLOPs/s, 95% Confidence Interval: [65886.250, 68306.250]
+
+  ShiftRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=3.434 ms
+
+    Mean throughput=39084.285156 GFLOPs/sec, stdev=16.542 GFLOPs/s, 95% Confidence Interval: [39074.031, 39094.539]
+
+  ShiftLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=0.021 ms
+
+    Mean throughput=6376817.500000 GFLOPs/sec, stdev=297786.750 GFLOPs/s, 95% Confidence Interval: [6192247.500, 6561387.500]
+
+  ShiftRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=0.021 ms
+
+    Mean throughput=6384235.500000 GFLOPs/sec, stdev=242179.562 GFLOPs/s, 95% Confidence Interval: [6234131.000, 6534340.000]
+
+  RotateLeft test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=13.720 ms
+
+    Mean throughput=9782.493164 GFLOPs/sec, stdev=2.024 GFLOPs/s, 95% Confidence Interval: [9781.238, 9783.748]
+
+  RotateRight test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=13.730 ms
+
+    Mean throughput=9775.541992 GFLOPs/sec, stdev=1.314 GFLOPs/s, 95% Confidence Interval: [9774.728, 9776.356]
+
+  RotateLeftImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=0.021 ms
+
+    Mean throughput=6307945.000000 GFLOPs/sec, stdev=424363.938 GFLOPs/s, 95% Confidence Interval: [6044921.500, 6570968.500]
+
+  RotateRightImm test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=0.021 ms
+
+    Mean throughput=6281011.000000 GFLOPs/sec, stdev=230398.219 GFLOPs/s, 95% Confidence Interval: [6138208.500, 6423813.500]
+
+
+Running FP16 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=7.078 ms
+
+    Mean throughput=75849.578125 GFLOPs/sec, stdev=154.951 GFLOPs/s, 95% Confidence Interval: [75753.539, 75945.617]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=7.062 ms
+
+    Mean throughput=76022.281250 GFLOPs/sec, stdev=24.861 GFLOPs/s, 95% Confidence Interval: [76006.875, 76037.688]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=1073741824000, total bytes accessed=1073741824, AI=1000.000000, mean duration=27.320 ms
+
+    Mean throughput=39302.304688 GFLOPs/sec, stdev=4.649 GFLOPs/s, 95% Confidence Interval: [39299.422, 39305.188]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=122.764 ms
+
+    Mean throughput=4373.182617 GFLOPs/sec, stdev=0.460 GFLOPs/s, 95% Confidence Interval: [4372.897, 4373.468]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 536870912, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=68.454 ms
+
+    Mean throughput=7842.971680 GFLOPs/sec, stdev=32.181 GFLOPs/s, 95% Confidence Interval: [7823.025, 7862.918]
+
+
+Running FP32 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=3.937 ms
+
+    Mean throughput=68221.671875 GFLOPs/sec, stdev=1564.623 GFLOPs/s, 95% Confidence Interval: [67251.906, 69191.438]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=3.578 ms
+
+    Mean throughput=75029.257812 GFLOPs/sec, stdev=188.803 GFLOPs/s, 95% Confidence Interval: [74912.234, 75146.281]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=536870912000, total bytes accessed=1073741824, AI=500.000000, mean duration=3.832 ms
+
+    Mean throughput=140113.703125 GFLOPs/sec, stdev=1119.399 GFLOPs/s, 95% Confidence Interval: [139419.891, 140807.516]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=96.654 ms
+
+    Mean throughput=2779.402832 GFLOPs/sec, stdev=74.233 GFLOPs/s, 95% Confidence Interval: [2733.393, 2825.413]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 268435456, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=24.132 ms
+
+    Mean throughput=11123.697266 GFLOPs/sec, stdev=1.377 GFLOPs/s, 95% Confidence Interval: [11122.844, 11124.551]
+
+
+Running FP64 tests:
+  Add test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=2.319 ms
+
+    Mean throughput=57977.113281 GFLOPs/sec, stdev=2396.621 GFLOPs/s, 95% Confidence Interval: [56491.672, 59462.555]
+
+  Mul test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=2.021 ms
+
+    Mean throughput=66450.867188 GFLOPs/sec, stdev=1506.122 GFLOPs/s, 95% Confidence Interval: [65517.363, 67384.375]
+
+  MulAdd test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=268435456000, total bytes accessed=1073741824, AI=250.000000, mean duration=3.495 ms
+
+    Mean throughput=76798.640625 GFLOPs/sec, stdev=54.828 GFLOPs/s, 95% Confidence Interval: [76764.656, 76832.625]
+
+  Div test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=48.828 ms
+
+    Mean throughput=2748.790771 GFLOPs/sec, stdev=0.705 GFLOPs/s, 95% Confidence Interval: [2748.354, 2749.228]
+
+  Rsqrt test: workgroupSize:256, workgroups:16384, nThreads: 4194304, nSize: 134217728, experiments: 10
+    Total FLOPS=134217728000, total bytes accessed=1073741824, AI=125.000000, mean duration=12.079 ms
+
+    Mean throughput=11111.304688 GFLOPs/sec, stdev=1.917 GFLOPs/s, 95% Confidence Interval: [11110.116, 11112.493]
+
