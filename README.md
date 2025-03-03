@@ -11,7 +11,7 @@
 ╚██╗████╗██╔╝███████║██████╔╝██╔████╔██║█████╗░░██████╔╝
 ░████╔═████║░██╔══██║██╔══██╗██║╚██╔╝██║██╔══╝░░██╔══██╗
 ░╚██╔╝░╚██╔╝░██║░░██║██║░░██║██║░╚═╝░██║███████╗██║░░██║
-░░╚═╝░░░╚═╝░░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝╚══════╝╚═╝░░╚═╝                                                               
+░░╚═╝░░░╚═╝░░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝╚══════╝╚═╝░░╚═╝
  ```
 
 benchWarmer is a synthetic microbenchmark suite that measures throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
