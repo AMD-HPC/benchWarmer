@@ -19,7 +19,7 @@ for ((i=1; i<16; i++)); do
     nOps+=($nOp)
 done
 
-GPU=$1
+GPU="MI300A"
 
 for nOp in "${nOps[@]}"; do
     echo "Running PubBench with $nOp ops"
