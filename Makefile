@@ -6,9 +6,9 @@ nvidia: nv
 nOps ?= 1000
 
 %-nv: %.cu
-		nvcc $^ -o $@ -O3 -D nOps=$(nOps)
+		nvcc --std=c++11 $^ -o $@ -O3 -D nOps=$(nOps)
 %-amd: %.cu
-		hipcc -std=c++11 ${CFLAGS} $^ -o $@ -O3 -D nOps=$(nOps)
+		hipcc --std=c++11 $^ -o $@ -O3 -D nOps=$(nOps)
 		
 clean: 
 	rm benchWarmer-*
