@@ -3,16 +3,21 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>  // for __half
+#include <curand_kernel.h>
+#include <algorithm>
 
 #define gpu(symbol) cuda ## symbol
+#define rand(symbol) curand ## symbol
 
 #elif __HIPCC__
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>  // for __half
+#include <hiprand/hiprand_kernel.h>
 
 #define gpu(symbol) hip ## symbol
+#define rand(symbol) hiprand ## symbol
 
 #endif
 
@@ -149,12 +154,11 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
 	a = &buf[gid];
-	T x = (T)2.2;
-	T y = (T)1.2;
+	T x = a[0];
+	T y = a[1];
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -164,7 +168,6 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			// Two different write locations to force the compiler to complete every operation
 			x = func(a[offset], x, y);
 		}
 	}
@@ -178,12 +181,11 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
 	a = &buf[gid];
-	T x = (T)2.2;
-	T y = (T)1.2;
+	T x = a[0];
+	T y = a[1];
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -206,30 +208,46 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	float2 *a;
 	a = &buf[gid];
-	float2 x = {2.2f,2.2f};
-	float2 y = {1.2f,1.2f};
+	float2 x = {a[0].x,a[0].y};
+	float2 y = {a[1].x,a[1].y};
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
+	#pragma unroll 1
 	for(uint32_t offset=0; offset < nSize; offset += nThreads)
 	{
+		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			// Two different write locations to force the compiler to complete every operation
 			x = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
 		}
 	}
 	a[0] = x;
 }
 
+
+// Kernel to initialize the buffer with random values
+template <class T>
+__global__ void initializeRandom(T *buffer, int nSize, unsigned long long seed) {
+    const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < nSize) {
+      rand(State) state;
+      rand(_init)(seed + gid, 0, 0, &state); // Initialize the state with unique seed
+
+      if (std::is_integral<T>::value) {
+        buffer[gid] = rand()(&state) % 100;  // Generate a random integer [0 to 99]
+      } else {
+        buffer[gid] = rand(_uniform)(&state) * 100;  // Generate a random value between [0, 100)
+      }
+    }
+}
+
 template<class T, class Func>
 static void bench_func(void) {
   
-  void *memBlock;
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
   int numExperiments = DEFAULT_NUM_EXPERIMENTS;
@@ -238,7 +256,7 @@ static void bench_func(void) {
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
 
-  // Map for common names of datatypes
+  // Map to get common names of datatypes
   std::unordered_map<std::string, std::string> typeNameLookup = {
       {typeid(uint32_t).name(), "int32"},
       {typeid(uint64_t).name(), "int64"},
@@ -250,7 +268,7 @@ static void bench_func(void) {
   };
   std::string datatype = typeNameLookup.find(typeid(T).name())->second;
 
-  // s = the name of the operation (after some processing)
+  // op = the name of the operation (after some processing)
 	std::string op = typeid(Func).name();
   // Remove all numbers (digits)
   op.erase(std::remove_if(op.begin(), op.end(), ::isdigit), op.end());
@@ -266,7 +284,19 @@ static void bench_func(void) {
 	}
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
-  assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+  T *memBlock;
+  assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+
+  // Launch kernel to initialize the buffer in parallel
+  unsigned long long seed = 12345;  // A random seed for random number generation
+
+  // Launch the kernel
+  int blockSize = 256;
+  int gridSize = (nSize + blockSize - 1) / blockSize; // Compute number of blocks
+
+  // Explicitly instantiate the template for the kernel
+  initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
+  
 	
 
   // WARMUP KERNEL
@@ -302,6 +332,10 @@ static void bench_func(void) {
 	// Run experiments
   for (int n=0; n<numExperiments; n++)
   {
+    // Launch kernel to initialize the buffer in parallel
+    initializeRandom<<<numWorkgroups, workgroupSize>>>(memBlock, nSize, seed + n);
+    gpu(DeviceSynchronize());
+
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
 		// throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
 		// throughput_kernel: All other tests
@@ -343,17 +377,8 @@ static void bench_func(void) {
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
 
-  printf("%s, %s, %f, %.3f, %.3f, %lu, %lu, %.3f, %d, %lu, %d\n", datatype.c_str(), op.c_str(), meanThroughput, stdevThroughput, meanDuration, totalFlops, totalBytes, ((float)totalFlops/(float)totalBytes), numWorkgroups, nThreads, numExperiments);
-
 	// Print output
-  /*
-  printf("workgroupSize:%d, workgroups:%d, nThreads: %lu, nSize: %d, experiments: %d\n",
-      workgroupSize, numWorkgroups, nThreads, nSize, numExperiments);
-  printf("    Total FLOPS=%lu, total bytes accessed=%lu, AI=%f, mean duration=%.3f ms\n\n",
-      totalFlops, totalBytes, ((float)totalFlops/(float)totalBytes), meanDuration);
-  printf("    Mean throughput=%f GFLOPs/sec, stdev=%.3f GFLOPs/s, 95%% Confidence Interval: [%.3f, %.3f]\n\n",
-      meanThroughput, stdevThroughput, meanThroughput - confidenceThroughput, meanThroughput + confidenceThroughput);
-      */
+  printf("%s, %s, %f, %.3f, %.3f, %lu, %lu, %.3f, %d, %lu, %d\n", datatype.c_str(), op.c_str(), meanThroughput, stdevThroughput, meanDuration, totalFlops, totalBytes, ((float)totalFlops/(float)totalBytes), numWorkgroups, nThreads, numExperiments);
 
   // Clean up time
   gpu(Free(memBlock));
@@ -527,13 +552,14 @@ int main(int argc, char **argv)
 				exit(1);
 		}
 	}
-	// If no operation is selected, do all of them
+	// If no operation/datatype is selected, do all of them
 	if (! (add || mul || muladd || div || rsq || shift || rotate)) {
 		add=1, mul=1, muladd=1, div=1, rsq=1, shift=1, rotate=1;
 	}
 	if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
 		i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
 	}
+  // Print header for CSV file
   printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
   if (i8) {
     bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate);
