@@ -61,5 +61,6 @@ Arguments:
   --rsqrt, run rsqrt tests only
   --shift, run Shift tests only
   --rotate, run Rotate tests only
+  --convert, run Type Conversion tests only
 ```
 
