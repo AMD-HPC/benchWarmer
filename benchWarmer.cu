@@ -22,6 +22,7 @@
 #endif
 
 #include <string>
+#include <typeinfo>
 #include <unordered_map>
 #include <math.h>
 #include <vector>
