@@ -229,6 +229,7 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 }
 
 
+
 // Kernel to convert the datatype of the items in the buffer
 template <class T_in, class T_out>
 __global__ void convertKernel(T_in* d_input, T_out* d_output, size_t num_elements) {
@@ -343,7 +344,7 @@ static void bench_func(void) {
   for (int n=0; n<numExperiments; n++)
   {
     // Launch kernel to initialize the buffer in parallel
-    initializeRandom<<<gridSize, blockSize>>>(memBlock, nSize, seed + n);
+    initializeRandom<<<numWorkgroups, workgroupSize>>>(memBlock, nSize, seed + n);
     gpu(DeviceSynchronize());
 
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
