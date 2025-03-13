@@ -334,7 +334,7 @@ static void bench_func(void) {
   for (int n=0; n<numExperiments; n++)
   {
     // Launch kernel to initialize the buffer in parallel
-    initializeRandom<<<numWorkgroups, workgroupSize>>>(memBlock, nSize, seed + n);
+    initializeRandom<<<gridSize, blockSize>>>(memBlock, nSize, seed + n);
     gpu(DeviceSynchronize());
 
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
