@@ -16,7 +16,7 @@
 
 benchWarmer is a synthetic microbenchmark suite that measures vector pipe throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
 
-The motivation for this tool is to study the rawest performance capabilities of the hardware's vector pipe for both compute-bound and bandwidth-bound workloads.
+The motivation for this tool is to study fundamental vector instruction level throughput performance for both compute-bound and bandwidth-bound workloads using a high-level implementation in CUDA or HIP.
 
 ## Implementation
 
