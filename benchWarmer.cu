@@ -25,19 +25,22 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fstream>
+#include <rocSTAR.h>
 // #include <iostream>
 #include <assert.h>
 
 // Number of computes must be set at compile time
 #ifndef nOps
-#define nOps 1000
+#endif
+
+#ifndef EXP
 #endif
 
 std::string GPU;
 
 #define DEFAULT_WORKGROUP_SIZE 256
 #define DEFAULT_WORKGROUPS 16384
-#define DEFAULT_NUM_EXPERIMENTS 10
+
 #define DEFAULT_DATASET_SIZE 1024 * 1024 * 1024
 
 // function classes that we want to measure
@@ -324,7 +327,7 @@ static void bench_func(void) {
   void *memBlock;
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
-  int numExperiments = DEFAULT_NUM_EXPERIMENTS;
+  int numExperiments = EXP;
 
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
@@ -377,6 +380,9 @@ static void bench_func(void) {
   float *durations = (float *)calloc(numExperiments, sizeof(float));
 
 	// Run experiments
+  rocStarInit();
+  char *kernelName = (char*)"throughputKernel";
+  rocStarStart(kernelName);
   for (int n=0; n<numExperiments; n++)
   {
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
@@ -412,6 +418,8 @@ static void bench_func(void) {
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
   }
+  rocStarStop();
+  rocStarFinalize();
 
   // Calculate summary statistics
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
@@ -419,7 +427,7 @@ static void bench_func(void) {
   std::string target_col = " ";
 	float *AI_HBM = nullptr;
   if (s.find("MulAdd") != std::string::npos) {
-	printf("Found MulAdd in Func name!");
+	// printf("Found MulAdd in Func name!");
 	AI_HBM = AI_HBM_MULADD;
 	target_col = "AI_HBM_MULADD";
   } else if (s.find("Mul") != std::string::npos) {
@@ -439,7 +447,7 @@ static void bench_func(void) {
 	// std::string typeName = typeid(T).name();
 	float AI = (float)totalFlops / (float)totalBytes;
   if (AI_HBM != nullptr && indexMap.find(typeName) != indexMap.end()) {
-	printf("Assigning value to array!");
+	// printf("Assigning value to array!");
     AI_HBM[indexMap[typeName]] = AI;
   }
   std::string data_type = opMap[indexMap[typeName]];
@@ -503,6 +511,11 @@ static void bench_func(void) {
 		}
 		csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
 		csvFile.close();
+		std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
+		if (outFile.is_open()) {
+			outFile << meanDuration << std::endl;
+			outFile.close();
+		}
 		printf("Results written to %s\n", filename.c_str());
 	} else {
 		printf("Error opening %s\n", filename.c_str());
