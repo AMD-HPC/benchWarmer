@@ -27,6 +27,7 @@ parser.add_argument('-d', '--datatypes', required=True, help='Data types you wan
 parser.add_argument('-hw', '--hardware', required=False, help='Provide directory to hardware metrics you want to plot (ex. Power, Frequency).')
 parser.add_argument('-m', '--memory', required=True, help='Memory types you want to plot (ex. L2, HBM). Provide in space separated format')
 parser.add_argument('-o', '--operations', required=False, help='Operations you want to plot (ex. ADD, MUL). Provide in space separated format')
+parser.add_argument('-f', '--filename', required=True, help='Filename which you want the plot to be')
 
 args = parser.parse_args()
 
@@ -46,6 +47,7 @@ op_types = args.operations.split()
 mem_types = args.memory.split()
 hw_metrics_dir = args.hardware
 n_threads=7471104
+filename = args.filename
 print('Parsing complete.')
 
 # Reorganize memory types
@@ -112,7 +114,7 @@ if args.results:
 print('Plotting rooflines...')
 # plt.figure(figsize=(12, 6))
 # Generate AI values for x-axis
-AI = np.logspace(-1, 5, 10000)
+AI = np.logspace(-1, 6, 10000)
 
 # Define colors and markers
 colors = ['blue', 'green', 'red', 'purple', 'orange', 'brown', 'pink', 'gray', 'cyan', 'magenta']
@@ -172,19 +174,25 @@ for gpu, (slope, peak) in emp_roofs.items():
     # data = key.split('_')[2]
     x_intersect = peak / slope
     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+    x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+    x_horizontal = [x_horizontal.min(), x_horizontal.max()]
     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+    y_slope = [y_slope.min(), y_slope.max()]
     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+    y_horizontal = [y_horizontal.min(), y_horizontal.max()]
     # print(f'Plotting {mem} {op} {data}...')
     # print(f'Slope (Bw): {np.round(slope, 2)}')
 
     # Create data sources for the lines
-    source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope))
-    source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal))
+    source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+    source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
     # Plot the lines without labels
-    slope = p.line('x', 'y', source=source_slope, line_width=2, color=gpu_type_colors[gpu], visible=True)
-    peak = p.line('x', 'y', source=source_horizontal, line_width=2, color=gpu_type_colors[gpu], line_dash='dashed', visible=True)
+    slope = p.line('x', 'y', source=source_slope, line_width=2, color=gpu_type_colors[gpu], visible=False)
+    peak = p.line('x', 'y', source=source_horizontal, line_width=2, color=gpu_type_colors[gpu], line_dash='dashed', visible=False)
+    slope.name = 'roofline'
+    peak.name = 'roofline'
     gpu_sources[gpu].append(slope)
     gpu_sources[gpu].append(peak)
 
@@ -207,13 +215,21 @@ callback_code = """
         const selected_gpus = new Set(gpu_checkboxes.active.map(i => gpu_checkboxes.labels[i].split(' ')[0]));
 
         for (const [op, renderers] of Object.entries(op_sources)) {
-            const op_visible = selected_ops.size === 0 || selected_ops.has(op);
+            const op_visible = selected_ops.has(op);
             for (const renderer of renderers) {
                 const data = renderer.data_source.data.data[0];
                 const data_visible = selected_data === null || selected_data === data;
                 const gpu = renderer.data_source.data.gpu[0];
                 const gpu_visible = selected_gpus.size === 0 || selected_gpus.has(gpu);
                 renderer.visible = op_visible && data_visible && gpu_visible;
+            }
+        }
+        for (const [gpu, renderers] of Object.entries(gpu_sources)) {
+            const gpu_visible = selected_gpus.has(gpu);
+            for (const renderer of renderers) {
+                if (renderer.name === 'roofline') {
+                    renderer.visible = gpu_visible;
+                }
             }
         }
     }
@@ -258,7 +274,7 @@ curdoc().template = """
 </body>
 </html>
 """
-output_file(f'roofline_plots/roofline_comparison.html')
+output_file(filename=f'{filename}.html')
 show(layout)
 # print(f'roofline_plots/{gpu_name.lower()}_emp_rooflines_bokeh.html')
 
@@ -364,10 +380,10 @@ show(layout)
 
 
 # Save plot
-os.makedirs('roofline_plots', exist_ok=True)
-if 'pubbench' in args.results:
-    filename = f'roofline_plots/{gpu_name.lower()}_pubbench_rooflines'
-else:
-    filename = f'roofline_plots/{gpu_name.lower()}_emp_rooflines'
+# os.makedirs('roofline_plots', exist_ok=True)
+# if 'pubbench' in args.results:
+#     filename = f'roofline_plots/{gpu_name.lower()}_pubbench_rooflines'
+# else:
+#     filename = f'roofline_plots/{gpu_name.lower()}_emp_rooflines'
 plt.savefig(filename, bbox_inches='tight')
 print(f'Plot saved as {filename}.png')
