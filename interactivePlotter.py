@@ -9,7 +9,7 @@ import plotly.graph_objects as go
 import plotly.express as px
 from collections import defaultdict
 from bokeh.plotting import figure, show
-from bokeh.models import LinearColorMapper, ColorBar, BasicTicker
+from bokeh.models import LinearColorMapper, ColorBar, BasicTicker, Title, Label
 from bokeh.models import ColumnDataSource, CheckboxGroup, Button, FixedTicker, LogScale, LinearScale, CustomJS, Range1d, DataRange1d
 from bokeh.models.widgets import RadioButtonGroup, RadioGroup
 from bokeh.models.axes import LinearAxis
@@ -18,7 +18,7 @@ from bokeh.io import curdoc
 from plotly.subplots import make_subplots
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
-from matplotlib.colors import to_hex, LinearSegmentedColormap
+from matplotlib.colors import to_hex, LinearSegmentedColormap, to_rgba
 from bokeh.io import output_file
 from bokeh.models import HoverTool
 
@@ -84,6 +84,7 @@ for gpu in gpus:
     slope = (df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['PERF'] / df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['AI_HBM_MULADD_FP32']).max()
     peak = df[df['GPU'] == gpu]['PERF'].max()
     emp_roofs[gpu] = (slope, peak)
+    emp_roofs[gpu]
 
 # elif args.create:
 #     print('Creating new rooflines...')
@@ -107,18 +108,6 @@ if args.results:
 
                     kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
-                # slope = (perf_values / ai_values).max() / 1000
-
-                # max_index = (perf_values / ai_values).idxmax()
-                # max_perf = perf_values.loc[max_index]
-                # max_ai = ai_values.loc[max_index]
-                # print(f'Max PERF value: {max_perf}')
-                # print(f'Max AI value: {max_ai}')
-                # peak = roof_df[roof_df[ai_data_op_mem_col] != 0]['PERF'].max() / 1000
-                # print(slope, peak)
-                # kernels[mem + '_' + op + '_' + data] = (gpus, ai_values, perf_values, powers)
-    # print('New rooflines created.')
-
 print('Plotting rooflines...')
 # plt.figure(figsize=(12, 6))
 # Generate AI values for x-axis
@@ -137,8 +126,8 @@ gpu_type_colors = {data: color for data, color in zip(gpus, colors)}
 op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
-tooltips = [("AI", "@x"), ("Performance", "@y"), ("Operation", "@op"), ("Data Type", "@data"), ("Memory", "@mem")]
-p = figure(x_axis_type='log', y_axis_type='log', title='Empirical Rooflines',
+tooltips = [("AI", "@x"), ("Performance", "@y"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Memory", "@mem"), ("Power", "@power")]
+p = figure(x_axis_type='log', y_range=(0.1, 1e3), x_range=(0.1, 1e5), y_axis_type='log', title='Empirical Rooflines',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)',
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
 # Dictionaries to hold references to the plotted lines
@@ -146,37 +135,6 @@ op_sources = {}
 data_sources = {}
 gpu_sources = {}
 
-# Add a second y-axis with a linear scale
-# p.extra_y_ranges = {"Power": Range1d(-1200, 400)}
-# p.extra_y_scales = {"Power": LinearScale()}
-
-# power_axis = LinearAxis(y_range_name='Power', axis_label='Power (Watts)')
-# p.add_layout(power_axis, 'right')
-
-# power_axis.ticker = FixedTicker(ticks=[0, 50, 100, 150, 200, 250, 300, 350, 400])
-
-
-# power_plot = figure(x_axis_type='log', 
-#                    y_axis_label='Power (Watts)',
-#                    x_range=p.x_range,  # Share x-axis with main plot
-#                    tools='wheel_zoom,box_zoom,reset,save', 
-#                    width=900, 
-#                    height=150)  # 1/4 of main plot height
-
-# # Add right y-axis for power efficiency
-# power_efficiency_range = Range1d(start=0, end=10)
-# power_plot.extra_y_ranges = {"efficiency": power_efficiency_range}
-# power_plot.add_layout(
-#     LinearAxis(y_range_name="efficiency", axis_label="Power Efficiency (TFLOPs/Watt)"), 
-#     'right'
-# )
-
-# # Remove x-axis from main plot since we'll share it
-# p.xaxis.visible = False
-
-
-# marker_plots = []
-# p.rect(x=100, y=100, width=100, height=100, fill_color="red", fill_alpha=0.5)
 min_power = 200
 max_power = df['Power'].max()
 norm = plt.Normalize(
@@ -188,10 +146,12 @@ color_map = LinearSegmentedColormap.from_list(
 )
 
 # Convert to a hex palette
-hex_colors = [to_hex(color_map(i / 255)) for i in range(256)]
+rgba_colors = [to_rgba(color_map(i / 255), alpha=0.7) for i in range(256)]  # 0.3 = 30% opacity
+hex_colors_with_alpha = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}{int(a*255):02x}' 
+                         for r, g, b, a in rgba_colors]
 
 # Create Bokeh color mapper
-color_mapper = LinearColorMapper(palette=hex_colors, low=min_power, high=max_power)
+color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
 
 # Add the color bar
 color_bar = ColorBar(
@@ -199,13 +159,29 @@ color_bar = ColorBar(
     ticker=BasicTicker(),
     label_standoff=12,
     border_line_color=None,
-    location=(0, 0),
-    title="Power (W)"
+    location=(0, 0)
 )
 
 p.add_layout(color_bar, 'right')
 
-log_width = 0.3
+power_label = Title(text='Power (W)', offset=45)
+p.add_layout(power_label, 'right')
+
+log_width = 0.303
+
+scatter_data = {
+    "x": [],
+    "y": [],
+    "op": [],
+    "data_type": [],
+    "mem": [],
+    "gpu": [],
+    "power": [],
+    "xs": [],
+    "ys": [],
+    "color": [],
+}
+
 for key, gpu_data in kernels.items():
     # print(max([values[-1].max() for values in kernels.values()]))
     mem, op, data_type = key.split('_')
@@ -220,82 +196,54 @@ for key, gpu_data in kernels.items():
             x_left = ai / (10 ** (log_width / 2))
             x_right = ai * (10 ** (log_width / 2))
             bar_width = x_right - x_left
-
-            source_marker = ColumnDataSource(data=dict(
-                x=[ai], 
-                y=[perf], 
-                op=[op], 
-                data_type=[data_type], 
-                mem=[mem], 
-                gpu=[gpu],
-                power=[power]
-            ))
             color = to_hex(color_map(norm(power)))
+
             if ai < emp_roofs[gpu][1] / emp_roofs[gpu][0]:
-                patch_source = ColumnDataSource(data=dict(
-                    xs=[[x_left, x_left, x_right, x_right]],
-                    ys=[[0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]],
-                    color=[color],
-                    op=[op],
-                    data_type=[data_type],
-                    gpu=[gpu],
-                    mem=[mem],
-                    power=[power]
-                ))
+                y_patch = [0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]
             else:
-                patch_source = ColumnDataSource(data=dict(
-                    xs=[[x_left, x_left, x_right, x_right]],
-                    ys=[[0.1, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.1]],
-                    color=[color],
-                    op=[op],
-                    data_type=[data_type],
-                    gpu=[gpu],
-                    mem=[mem],
-                    power=[power]
-                ))
-
-            # Draw the patch using patches (plural)
-            power_color = p.patches(
-                xs='xs',
-                ys='ys',
-                source=patch_source,
-                fill_color='color',
-                fill_alpha=0.3,
-                line_color=None,
-                level='underlay',
-                visible=False
-            )
-
-            # Plot on performance chart (as before)
-            marker_plot = p.scatter('x', 'y', source=source_marker, size=6, color='black', marker=marker, visible=False)
+                y_patch = [0.1, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.1]
             
-            # Plot on power chart
-            # print(power)
-            # power_marker = p.scatter('x', 'power', source=source_marker, size=6, color=to_hex(color_map(norm(power))), marker=marker, y_range_name="Power", visible=False)
-            
-            # Plot efficiency on secondary y-axis
+            x_patch = [x_left, x_left, x_right, x_right]
 
-            # Store references for filtering - add the new plots to the filtering system
-            if op not in op_sources:
-                op_sources[op] = []
-            if data not in data_sources:
-                data_sources[data] = []
-            # print(gpu)
+            scatter_data["x"].append(ai)
+            scatter_data["y"].append(perf)
+            scatter_data["op"].append(op)
+            scatter_data["data_type"].append(data_type)
+            scatter_data["mem"].append(mem)
+            scatter_data["gpu"].append(gpu)
+            scatter_data["power"].append(power)
+            scatter_data["xs"].append(x_patch)
+            scatter_data["ys"].append(y_patch)
+            scatter_data["color"].append(color)
+
+            
             if gpu not in gpu_sources:
                 gpu_sources[gpu] = []
 
-            op_sources[op].append(marker_plot)
-            # op_sources[op].append(power_marker)
-            op_sources[op].append(power_color)
-            
-            data_sources[data].append(marker_plot)
-            # data_sources[data].append(power_marker)
-            data_sources[data].append(power_color)
-            
-            gpu_sources[gpu].append(marker_plot)
-            # gpu_sources[gpu].append(power_marker)
-            gpu_sources[gpu].append(power_color)
-# print(gpu_sources.keys())
+source_all = ColumnDataSource(data=scatter_data)
+source_full = ColumnDataSource(data=scatter_data)
+
+scatter_renderer = p.scatter(
+    x="x", y="y", source=source_all,
+    size=12, color='black', marker='circle', visible=False
+)
+
+power_renderer = p.patches(
+    xs='xs',
+    ys='ys',
+    source=source_all,
+    fill_color='color',
+    fill_alpha=0.7,
+    line_color=None,
+    level='underlay',
+    visible=False
+)
+
+hover_tool = HoverTool(
+    tooltips=tooltips,
+    renderers=[scatter_renderer],
+)
+p.add_tools(hover_tool)
 
 for gpu, (slope, peak) in emp_roofs.items():
     # mem = key.split('_')[0]
@@ -318,21 +266,21 @@ for gpu, (slope, peak) in emp_roofs.items():
     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
     # Plot the lines without labels
-    slope = p.line('x', 'y', source=source_slope, line_width=2, color=gpu_type_colors[gpu], visible=False)
-    peak = p.line('x', 'y', source=source_horizontal, line_width=2, color=gpu_type_colors[gpu], line_dash='dashed', visible=False)
+    slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+    peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
     slope.name = 'roofline'
     peak.name = 'roofline'
     gpu_sources[gpu].append(slope)
     gpu_sources[gpu].append(peak)
 
 # Create CheckboxGroups for Operation Types and Data Types with no active selections
-op_checkboxes = RadioGroup(labels=[f"{op} ({marker})" for op, marker in zip(op_types, markers)], active=0)
+op_checkboxes = RadioGroup(labels=[op for op in op_types], active=0)
 data_checkboxes = RadioGroup(
     labels=[f"{data}" for data in data_types],
     active=0
 )
 gpus = df['GPU'].unique()
-gpu_checkboxes = RadioGroup(labels=[f"{gpu} ({color})" for gpu, color in zip(gpus, colors)], active=0)
+gpu_checkboxes = RadioGroup(labels=[gpu for gpu in gpus], active=0)
 
 # Define the JavaScript Callback for RadioGroup Interactions
 callback_code = """
@@ -342,18 +290,38 @@ callback_code = """
         const selected_data = data_checkboxes.active !== null ? data_checkboxes.labels[data_checkboxes.active] : null;
         const selected_gpu = gpu_checkboxes.active !== null ? gpu_checkboxes.labels[gpu_checkboxes.active].split(' ')[0] : null;
 
-        for (const [op, renderers] of Object.entries(op_sources)) {
-            const op_visible = selected_op === null || selected_op === op;
-            for (const renderer of renderers) {
-                const source = renderer.data_source.data;
-                const data_type = source.data_type ? source.data_type[0] : null;
-                const gpu = source.gpu ? source.gpu[0] : null;
-                const data_visible = selected_data === null || selected_data === data_type;
-                const gpu_visible = selected_gpu === null || selected_gpu === gpu;
-                console.log("Patch", {op, data_type, gpu, visible: op_visible && data_visible && gpu_visible});
-                renderer.visible = op_visible && data_visible && gpu_visible;
+        const full_data = source_full.data;
+        const filtered = {
+            x: [], y: [], op: [], data_type: [], mem: [], gpu: [], power: [],
+            xs: [], ys: [], color: []
+        };
+
+        for (let i = 0; i < full_data.x.length; i++) {
+            const op_match = selected_op === null || full_data.op[i] === selected_op;
+            const data_match = selected_data === null || full_data.data_type[i] === selected_data;
+            const gpu_match = selected_gpu === null || full_data.gpu[i] === selected_gpu;
+
+            if (op_match && data_match && gpu_match) {
+                filtered.x.push(full_data.x[i]);
+                filtered.y.push(full_data.y[i]);
+                filtered.op.push(full_data.op[i]);
+                filtered.data_type.push(full_data.data_type[i]);
+                filtered.mem.push(full_data.mem[i]);
+                filtered.gpu.push(full_data.gpu[i]);
+                filtered.power.push(full_data.power[i]);
+                filtered.xs.push(full_data.xs[i]);
+                filtered.ys.push(full_data.ys[i]);
+                filtered.color.push(full_data.color[i]);
             }
         }
+
+        // Replace the source data with filtered view
+        source_all.data = filtered;
+        source_all.change.emit();
+        p.change.emit();
+        scatter_renderer.visible = true;
+        power_renderer.visible = true;
+
         for (const [gpu, renderers] of Object.entries(gpu_sources)) {
             const gpu_visible = selected_gpu === null || selected_gpu === gpu;
             for (const renderer of renderers) {
@@ -364,13 +332,11 @@ callback_code = """
         }
     }
 
-    // Update the visibility of the plots
     update_visibility();
 """
-
 # Create the CustomJS callback
 callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes,
-                              op_sources=op_sources, data_sources=data_sources, gpu_sources=gpu_sources), code=callback_code)
+                              gpu_sources=gpu_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
@@ -409,114 +375,6 @@ curdoc().template = """
 """
 output_file(filename=f'{filename}.html')
 show(layout)
-# print(f'roofline_plots/{gpu_name.lower()}_emp_rooflines_bokeh.html')
 
-# fig.write_html(f'roofline_plots/{gpu_name.lower()}_emp_rooflines.html')
-
-# Plot kernel runtime data if provided
-# if args.results:
-#     # subplot 1
-#     new_df = pd.DataFrame
-#     df['Kernel_Length'] = df['Kernel'] + '_' + df['Length'].astype(str)
-#     unique_combinations = df['Kernel_Length'].unique()
-#     unique_lengths = df["Length"].unique()
-#     unique_iterations = df["Iterations"].unique()
-#     combo_color_map = {combo: color for combo, color in zip(unique_combinations, plt.get_cmap("tab10").colors)}
-
-#     def get_shade(color, iteration, max_iterations):
-#         try:
-#             iteration = math.log10(iteration)
-#             max_iterations = math.log10(max_iterations)
-#         except ValueError:
-#             print(f"Error: iteration: {iteration}")
-#         alpha = (iteration / max_iterations) * 0.8 + 0.2
-#         return color[0], color[1], color[2], alpha
-        
-
-#     print('Plotting kernels...')
-#     max_iterations = max(unique_iterations)
-
-#     # Filter performance and AI measurements to only consist of the operations and memory types we want to plot
-#     # perf_cols = [c for c in df.columns if 'PERF_' in c and any(op in c for op in data_types)]
-#     ai_cols = [c for c in df.columns if 'AI_' in c and any(op in c for op in data_types) and any(mem in c for mem in mem_types)]
-
-#     # For each kernel, plot its performance and AI measurements
-#     handles = []
-#     labels = []
-
-#     # subplot 2
-#     for _, row in df.iterrows():
-#         length = row['Length']
-#         iteration = row['Iterations']
-#         color = combo_color_map[row['Kernel_Length']]
-#         shade = get_shade(color, iteration, max_iterations)
-#         for ai_col in ai_cols:
-#             # for perf_col in perf_cols:
-#             if float(row[ai_col]) > 0: # If performance is 0, that specific data was not gathered for that kernel
-#                 scatter = ax1.scatter(row[ai_col], row['PERF'], color=shade, edgecolor="black")
-#                 # label = f"{row['Kernel']}, 2^{int(math.log2(row['Length']))} Length, {row['Iterations']} Iters, {ai_col}, {perf_col}"
-#                 # handles.append(scatter)
-#                 # labels.append(label)
-#     # custom_legend = plt.legend(handles, labels, loc='lower right', title='Kernel Data', prop={'size': 8})
-#     # for every csv file in hw_metrics dir, get the last value in df[Power[W]] and save it in dictionary
-#     if args.hardware:
-#         print('Gathering power data from hw_metrics directory...')
-#         hw_data = {}
-#         for file in os.listdir(hw_metrics_dir):
-#             if file.endswith('.csv'):
-#                 # strip all the column names of whitespace
-#                 # print(os.path.join(hw_metrics_dir, file))
-#                 hw_df = pd.read_csv(os.path.join(hw_metrics_dir, file))
-#                 hw_df.columns = hw_df.columns.str.strip()
-#                 # print(hw_df['Power[W]'].iloc)
-#                 if not hw_df.empty:
-#                     # print(f'{file} is empty')
-#                     if 'Power[W]' in hw_df.columns:
-#                         # length = file.split('_')[-1]
-#                         ai = file.split('_')[-1][:-4]
-#                         # print(ai)
-#                         hw_data[float(ai)] = float(hw_df['Power[W]'].iloc[-1])
-#         # Create a new subplot for power data
-#         # fig, ax1 = plt.subplots(figsize=(12, 6))
-
-#         # Plot power data
-#         for ai, power in hw_data.items():
-#             # print(f'AI: {ai}, Power: {power}')
-#             ax2.scatter(ai, power, edgecolor="black")
-
-#         ax2.set_xscale('log')
-#         ax2.set_yscale('log')
-#         ax2.set_xlabel("Arithmetic Intensity (FLOPs/Byte)")
-#         ax2.set_ylabel("Power (W)")
-#         ax2.set_title(f"Power Consumption vs Arithmetic Intensity ({gpu_name})")
-#         # ax2.legend()
-#         ax2.grid(True, which="both", linestyle="--", linewidth=0.5)
-#         ax2.set_xlim(0.01, 100000)
-#         # ax2.set_ylim(100, 100000)
-#         ax2.xaxis.set_major_locator(mtick.LogLocator(base=10.0, subs=[], numticks=10))
-#         ax2.xaxis.set_minor_locator(mtick.LogLocator(base=10.0, subs='auto', numticks=10))
-#         ax2.xaxis.set_major_formatter(mtick.FuncFormatter(lambda x, _: f"{float(x)}"))
-#         ax2.yaxis.set_major_formatter(mtick.FuncFormatter(lambda y, _: f"{float(y)}"))
-        
-
-#         # Save power plot
-#         # power_filename = f'roofline_plots/{gpu_name.lower()}_power_vs_ai'
-#         # plt.savefig(power_filename, bbox_inches='tight')
-#         # print(f'Power plot saved as {power_filename}.png')
-#         # for ai, power in hw_data.items():
-            
-#         print('Power data gathered')
-
-#     print('Plotting complete.')
-
-# Set log-log scale and add ticks
-
-
-# Save plot
-# os.makedirs('roofline_plots', exist_ok=True)
-# if 'pubbench' in args.results:
-#     filename = f'roofline_plots/{gpu_name.lower()}_pubbench_rooflines'
-# else:
-#     filename = f'roofline_plots/{gpu_name.lower()}_emp_rooflines'
 plt.savefig(filename, bbox_inches='tight')
 print(f'Plot saved as {filename}.png')
