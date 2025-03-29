@@ -288,7 +288,7 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 }
 
 template<class T, class Func>
-static void bench_func(void) {
+static void bench_func(bool rocstar, bool record) {
 	// print value of Func and T
 	std::string s = typeid(Func).name();
 	std::string typeName = typeid(T).name();
@@ -380,9 +380,12 @@ static void bench_func(void) {
   float *durations = (float *)calloc(numExperiments, sizeof(float));
 
 	// Run experiments
-  rocStarInit();
-  char *kernelName = (char*)"throughputKernel";
-  rocStarStart(kernelName);
+  if (rocstar == true) {
+	rocStarInit();
+	char *kernelName = (char*)"throughputKernel";
+	rocStarStart(kernelName);
+  }
+  
   for (int n=0; n<numExperiments; n++)
   {
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
@@ -418,8 +421,10 @@ static void bench_func(void) {
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
   }
-  rocStarStop();
-  rocStarFinalize();
+  if (rocstar == true) {
+	rocStarStop();
+  	rocStarFinalize();
+  }
 
   // Calculate summary statistics
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
@@ -465,61 +470,64 @@ static void bench_func(void) {
   printf("    Mean throughput=%f GFLOPs/sec, stdev=%.3f GFLOPs/s, 95%% Confidence Interval: [%.3f, %.3f]\n\n",
       meanThroughput, stdevThroughput, meanThroughput - confidenceThroughput, meanThroughput + confidenceThroughput);
 	// std::cout << GPU;
-	std::string filename = "pubbench_results_" + GPU + ".csv";
-	std::ifstream infile(filename);
-	bool fileIsEmpty = infile.peek() == std::ifstream::traits_type::eof();
-	infile.close();
+	if (record == true) {
+		std::string filename = "pubbench_results_" + GPU + ".csv";
+		std::ifstream infile(filename);
+		bool fileIsEmpty = infile.peek() == std::ifstream::traits_type::eof();
+		infile.close();
 
-	std::ofstream csvFile;
-	csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
-	if (csvFile.is_open()) {
-		if (fileIsEmpty) {
-			csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
+		std::ofstream csvFile;
+		csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
+		if (csvFile.is_open()) {
+			if (fileIsEmpty) {
+				csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
+				for (int i = 0; i < 7; ++i) {
+					csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
+				}
+				for (int i = 0; i < 7; ++i) {
+					csvFile << "AI_HBM_MUL_" << opMap[i] << ",";
+				}
+				for (int i = 0; i < 7; ++i) {
+					csvFile << "AI_HBM_MULADD_" << opMap[i] << ",";
+				}
+				for (int i = 0; i < 7; ++i) {
+					csvFile << "AI_HBM_DIV_" << opMap[i] << ",";
+				}
+				for (int i = 0; i < 7; ++i) {
+					csvFile << "AI_HBM_RSQ_" << opMap[i] << ",";
+				}
+				csvFile << "AverageSec,PERF,STDDEV,CI\n";
+			}
+			csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
+							<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
 			for (int i = 0; i < 7; ++i) {
-				csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
+				csvFile << AI_HBM_ADD[i] << ",";
 			}
 			for (int i = 0; i < 7; ++i) {
-				csvFile << "AI_HBM_MUL_" << opMap[i] << ",";
+				csvFile << AI_HBM_MUL[i] << ",";
 			}
 			for (int i = 0; i < 7; ++i) {
-				csvFile << "AI_HBM_MULADD_" << opMap[i] << ",";
+				csvFile << AI_HBM_MULADD[i] << ",";
 			}
 			for (int i = 0; i < 7; ++i) {
-				csvFile << "AI_HBM_DIV_" << opMap[i] << ",";
+				csvFile << AI_HBM_DIV[i] << ",";
 			}
 			for (int i = 0; i < 7; ++i) {
-				csvFile << "AI_HBM_RSQ_" << opMap[i] << ",";
+				csvFile << AI_HBM_RSQ[i] << ",";
 			}
-			csvFile << "AverageSec,PERF,STDDEV,CI\n";
+			csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
+			csvFile.close();
+			std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
+			if (outFile.is_open()) {
+				outFile << meanDuration << std::endl;
+				outFile.close();
+			}
+			printf("Results written to %s\n", filename.c_str());
+		} else {
+			printf("Error opening %s\n", filename.c_str());
 		}
-		csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
-						<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
-		for (int i = 0; i < 7; ++i) {
-			csvFile << AI_HBM_ADD[i] << ",";
-		}
-		for (int i = 0; i < 7; ++i) {
-			csvFile << AI_HBM_MUL[i] << ",";
-		}
-		for (int i = 0; i < 7; ++i) {
-			csvFile << AI_HBM_MULADD[i] << ",";
-		}
-		for (int i = 0; i < 7; ++i) {
-			csvFile << AI_HBM_DIV[i] << ",";
-		}
-		for (int i = 0; i < 7; ++i) {
-			csvFile << AI_HBM_RSQ[i] << ",";
-		}
-		csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
-		csvFile.close();
-		std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
-		if (outFile.is_open()) {
-			outFile << meanDuration << std::endl;
-			outFile.close();
-		}
-		printf("Results written to %s\n", filename.c_str());
-	} else {
-		printf("Error opening %s\n", filename.c_str());
 	}
+	
 	  
 
   // Clean up time
@@ -527,85 +535,85 @@ static void bench_func(void) {
 }
 
 template<class T>
-static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority) {
+static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority, bool rocstar, bool record) {
 	if(add) {
 		printf("  Add test: ");
-		bench_func<T,Add<T>>();
+		bench_func<T,Add<T>>(rocstar, record);
 	}
 	if(mul) {
 		printf("  Mul test: ");
-		bench_func<T,Mul<T>>();
+		bench_func<T,Mul<T>>(rocstar, record);
 	}
 	if(muladd) {
 		printf("  MulAdd test: ");
-		bench_func<T,MulAdd<T>>();
+		bench_func<T,MulAdd<T>>(rocstar, record);
 	}
 	if(div) {
 		printf("  Div test: ");
-		bench_func<T,Div<T>>();
+		bench_func<T,Div<T>>(rocstar, record);
 	}
 	if(rsq) {
 		printf("  Rsqrt test: ");
-		bench_func<T,Rsqrt<T>>();
+		bench_func<T,Rsqrt<T>>(rocstar, record);
 	}
 	if(xorFunc) {
 		printf("  Xor test: ");
-		bench_func<T,Xor<T>>();
+		bench_func<T,Xor<T>>(rocstar, record);
 	}
 	if(shift) {
 		printf("  ShiftLeft test: ");
-		bench_func<T,ShiftLeft<T>>();
+		bench_func<T,ShiftLeft<T>>(rocstar, record);
 		printf("  ShiftRight test: ");
-		bench_func<T,ShiftRight<T>>();
+		bench_func<T,ShiftRight<T>>(rocstar, record);
 		printf("  ShiftLeftImm test: ");
-		bench_func<T,ShiftLeftImm<T,3>>();
+		bench_func<T,ShiftLeftImm<T,3>>(rocstar, record);
 		printf("  ShiftRightImm test: ");
-		bench_func<T,ShiftRightImm<T,3>>();
+		bench_func<T,ShiftRightImm<T,3>>(rocstar, record);
 	}
 	if(rotate) {
 		printf("  RotateLeft test: ");
-		bench_func<T,RotateLeft<T>>();
+		bench_func<T,RotateLeft<T>>(rocstar, record);
 		printf("  RotateRight test: ");
-		bench_func<T,RotateRight<T>>();
+		bench_func<T,RotateRight<T>>(rocstar, record);
 		printf("  RotateLeftImm test: ");
-		bench_func<T,RotateLeftImm<T,3>>();
+		bench_func<T,RotateLeftImm<T,3>>(rocstar, record);
 		printf("  RotateRightImm test: ");
-		bench_func<T,RotateRightImm<T,3>>();
+		bench_func<T,RotateRightImm<T,3>>(rocstar, record);
 	}
 	if(choosery) {
 		printf("  Choosery test: ");
-		bench_func<T,Choosery<T>>();
+		bench_func<T,Choosery<T>>(rocstar, record);
 	}
 	if(majority) {
 		printf("  Majority1 test: ");
-		bench_func<T,Majority1<T>>();
+		bench_func<T,Majority1<T>>(rocstar, record);
 		printf("  Majority2 test: ");
-		bench_func<T,Majority2<T>>();
+		bench_func<T,Majority2<T>>(rocstar, record);
 	}
 }
 
 
 template<class T>
-static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq) {
+static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool rocstar, bool record) {
 	if(add) {
 		printf("  Add test: ");
-		bench_func<T,Add<T>>();
+		bench_func<T,Add<T>>(rocstar, record);
 	}
 	if(mul) {
 		printf("  Mul test: ");
-		bench_func<T,Mul<T>>();
+		bench_func<T,Mul<T>>(rocstar, record);
 	}
 	if(muladd) {
 		printf("  MulAdd test: ");
-		bench_func<T,MulAdd<T>>();
+		bench_func<T,MulAdd<T>>(rocstar, record);
 	}
 	if(div) {
 		printf("  Div test: ");
-		bench_func<T,Div<T>>();
+		bench_func<T,Div<T>>(rocstar, record);
 	}
 	if(rsq) {
 		printf("  Rsqrt test: ");
-		bench_func<T,Rsqrt<T>>();
+		bench_func<T,Rsqrt<T>>(rocstar, record);
 	}
 }
 
@@ -615,6 +623,7 @@ int main(int argc, char **argv)
 	//CLI parsing
 	bool i8 = false, i16 = false, i32 = false, i64 = false, fp16 = false, fp32 = false, fp64 = false;
 	bool add = false, mul = false, muladd = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
+	bool rocstar = false, record = false;
 
 	int c, option_index = 0;
 	static struct option long_options[] = {
@@ -639,6 +648,8 @@ int main(int argc, char **argv)
 					{"rotate",  no_argument,   0,  'p' },
 					{"choosery",no_argument,   0,  'q' },
 					{"majority",no_argument,   0,  'r' },
+					{"rocstar",no_argument, 0},
+					{"record",no_argument, 0},
 					{"gpu",     required_argument, 0,  'u' },
 					{0,         0,             0,  0   }
 			};
@@ -733,6 +744,15 @@ int main(int argc, char **argv)
 				majority = 1;
 				printf("Selected Majority test\n");
 				break;
+			case 0:
+				if (strcmp(long_options[option_index].name, "rocstar") == 0) {
+					rocstar = 1;
+					printf("Selected rocstar mode\n");
+				} else if (strcmp(long_options[option_index].name, "record") == 0) {
+					record = 1;
+					printf("Selected record mode\n");
+				}
+				break;
 			case 'h':
 			default:
 				printf("Usage: ./benchWarmer <args>\n");
@@ -778,30 +798,30 @@ int main(int argc, char **argv)
 	}
   if (i8) {
     printf("\nRunning int8 tests:\n");
-    bench_int<uint8_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+    bench_int<uint8_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
   }
   if (i16) {
 		printf("\nRunning int16 tests:\n");
-		bench_int<uint16_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint16_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
   }
   if (i32) {
 		printf("\nRunning int32 tests:\n");
-		bench_int<uint32_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint32_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
   }
   if (i64) {
 		printf("\nRunning int64 tests:\n");
-		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority);
+		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
   }
   if (fp16) {
 		printf("\nRunning FP16 tests:\n");
-		bench_fp<__half>(add, mul, muladd, div, rsq);
+		bench_fp<__half>(add, mul, muladd, div, rsq, rocstar, record);
   }
   if (fp32) {
 		printf("\nRunning FP32 tests:\n");
-		bench_fp<float>(add, mul, muladd, div, rsq);
+		bench_fp<float>(add, mul, muladd, div, rsq, rocstar, record);
   }
   if (fp64) {
 		printf("\nRunning FP64 tests:\n");
-		bench_fp<double>(add, mul, muladd, div, rsq);
+		bench_fp<double>(add, mul, muladd, div, rsq, rocstar, record);
   }
 }
