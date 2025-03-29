@@ -120,7 +120,7 @@ gpu_type_colors = {data: color for data, color in zip(gpus, colors)}
 op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
-tooltips = [("AI", "@x"), ("Performance", "@y"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Memory", "@mem"), ("Power", "@power")]
+tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
 p = figure(x_axis_type='log', y_range=(0.1, 1e3), x_range=(0.1, 1e5), y_axis_type='log', title='Empirical Rooflines',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)',
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
@@ -168,7 +168,6 @@ scatter_data = {
     "y": [],
     "op": [],
     "data_type": [],
-    "mem": [],
     "gpu": [],
     "power": [],
     "xs": [],
@@ -223,7 +222,6 @@ for key, gpu_data in kernels.items():
             scatter_data["y"].append(perf)
             scatter_data["op"].append(op)
             scatter_data["data_type"].append(data_type)
-            scatter_data["mem"].append(mem)
             scatter_data["gpu"].append(gpu)
             scatter_data["power"].append(power)
             scatter_data["xs"].append(x_patch)
@@ -305,7 +303,7 @@ callback_code = """
 
         const full_data = source_full.data;
         const filtered = {
-            x: [], y: [], op: [], data_type: [], mem: [], gpu: [], power: [],
+            x: [], y: [], op: [], data_type: [], gpu: [], power: [],
             xs: [], ys: [], color: []
         };
 
@@ -319,7 +317,6 @@ callback_code = """
                 filtered.y.push(full_data.y[i]);
                 filtered.op.push(full_data.op[i]);
                 filtered.data_type.push(full_data.data_type[i]);
-                filtered.mem.push(full_data.mem[i]);
                 filtered.gpu.push(full_data.gpu[i]);
                 filtered.power.push(full_data.power[i]);
                 filtered.xs.push(full_data.xs[i]);
