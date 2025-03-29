@@ -105,15 +105,9 @@ if args.results:
                     ai_value = row_data[ai_data_op_mem_col]
                     perf_value = row_data['PERF']
                     power_value = row_data['Power']
-
                     kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
 print('Plotting rooflines...')
-# plt.figure(figsize=(12, 6))
-# Generate AI values for x-axis
-
-
-
 
 AI = np.logspace(-1, 6, 10000)
 
@@ -191,6 +185,7 @@ for key, gpu_data in kernels.items():
         color = gpu_type_colors[gpu]
         y_range = p.y_range
         # color_map = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
+        roofline = False
         for ai, (perf, power) in ai_data.items():
             # Create source with all data including power
             x_left = ai / (10 ** (log_width / 2))
@@ -198,10 +193,29 @@ for key, gpu_data in kernels.items():
             bar_width = x_right - x_left
             color = to_hex(color_map(norm(power)))
 
-            if ai < emp_roofs[gpu][1] / emp_roofs[gpu][0]:
+            slope, peak = emp_roofs[gpu]
+
+            if ai < peak / emp_roofs[gpu][0]:
                 y_patch = [0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]
             else:
                 y_patch = [0.1, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.1]
+            
+            knee = peak / slope
+
+            if ai > knee and roofline == False:
+                x_left = knee
+                y_patch[1] = peak
+                prev_xs = scatter_data['xs'][-1]
+                prev_xs[2] = knee
+                prev_xs[3] = knee
+
+                prev_ys = scatter_data['ys'][-1]
+                prev_ys[2] = peak
+
+                scatter_data['xs'][-1] = prev_xs
+                scatter_data['ys'][-1] = prev_ys
+
+                roofline = True
             
             x_patch = [x_left, x_left, x_right, x_right]
 
@@ -215,11 +229,10 @@ for key, gpu_data in kernels.items():
             scatter_data["xs"].append(x_patch)
             scatter_data["ys"].append(y_patch)
             scatter_data["color"].append(color)
-
             
             if gpu not in gpu_sources:
                 gpu_sources[gpu] = []
-
+print(scatter_data)
 source_all = ColumnDataSource(data=scatter_data)
 source_full = ColumnDataSource(data=scatter_data)
 
