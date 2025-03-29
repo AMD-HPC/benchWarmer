@@ -25,6 +25,8 @@ export LD_LIBRARY_PATH="$ROCSTAR_ROOT/lib:$LD_LIBRARY_PATH"
 # AGT_PATH="../agt_files/agt_internal"
 
 GPU="MI300A"
+rm "pubbench_results_${GPU}.csv"
+touch "pubbench_results_${GPU}.csv"
 opTypes=("add" "mul" "muladd" "div" "rsqrt")
 dataTypes=("int8" "int16" "int32" "int64" "fp16" "fp32" "fp64")
 
@@ -34,7 +36,7 @@ mkdir -p "./rocstar_metrics/$GPU"
 for nOp in "${nOps[@]}"; do
     echo "Running PubBench with $nOp ops"
     # make clean
-    EXP=5
+    EXP=10
     make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
     ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
     AVG_TIME=$(cat meanDuration.txt)

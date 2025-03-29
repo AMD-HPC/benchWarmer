@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH -p caldera
-#SBATCH -w TheraC10
+#SBATCH -w TheraC98
 #SBATCH --gpus-per-node=1
 #SBATCH --time=05:00:00
 #SBATCH --output=/home/khoffmey/work/gpu_power_frequency_study/slurm_output/pubbench_job.out
@@ -11,6 +11,10 @@
 # echo "$SCRIPT_DIR"
 cd "/home/khoffmey/work/PubBench"
 module load CUDA
+
+GPU="H100"
+rm "pubbench_results_${GPU}.csv"
+touch "pubbench_results_${GPU}.csv"
 # pwd
 # ls
 
@@ -21,15 +25,16 @@ for ((i=1; i<16; i++)); do
     nOps+=($nOp)
 done
 
-GPU="A100"
-
+EXP=10
 for nOp in "${nOps[@]}"; do
     echo "Running PubBench with $nOp ops"
     # make clean
-    make nv nOps=$nOp GPU=$GPU
+    make nv nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
     echo "Running benchWarmer-nv_$nOp -u $GPU"
-    ./benchWarmer-nv_${GPU}_$nOp -u "$GPU" --add --mul --muladd --div --rsqrt
+    ./benchWarmer-nv_${GPU}_${nOp}_${EXP} -u "$GPU" --add --mul --muladd --div --rsqrt --record
 done
+
+
 
 
 # cp /home/khoffmey/work/PubBench/pubbench_results.csv "/home/khoffmey/work/PubBench/pubbench_results_backup.csv"
