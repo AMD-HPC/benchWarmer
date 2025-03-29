@@ -147,13 +147,13 @@ data_sources = {}
 gpu_sources = {}
 
 # Add a second y-axis with a linear scale
-p.extra_y_ranges = {"Power": Range1d(-1200, 400)}
-p.extra_y_scales = {"Power": LinearScale()}
+# p.extra_y_ranges = {"Power": Range1d(-1200, 400)}
+# p.extra_y_scales = {"Power": LinearScale()}
 
-power_axis = LinearAxis(y_range_name='Power', axis_label='Power (Watts)')
-p.add_layout(power_axis, 'right')
+# power_axis = LinearAxis(y_range_name='Power', axis_label='Power (Watts)')
+# p.add_layout(power_axis, 'right')
 
-power_axis.ticker = FixedTicker(ticks=[0, 50, 100, 150, 200, 250, 300, 350, 400])
+# power_axis.ticker = FixedTicker(ticks=[0, 50, 100, 150, 200, 250, 300, 350, 400])
 
 
 # power_plot = figure(x_axis_type='log', 
@@ -203,7 +203,7 @@ color_bar = ColorBar(
     title="Power (W)"
 )
 
-# p.add_layout(color_bar, 'right')
+p.add_layout(color_bar, 'right')
 
 log_width = 0.3
 for key, gpu_data in kernels.items():
@@ -231,16 +231,28 @@ for key, gpu_data in kernels.items():
                 power=[power]
             ))
             color = to_hex(color_map(norm(power)))
-            patch_source = ColumnDataSource(data=dict(
-                xs=[[x_left, x_left, x_right, x_right]],
-                ys=[[0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]],
-                color=[color],
-                op=[op],
-                data_type=[data_type],
-                gpu=[gpu],
-                mem=[mem],
-                power=[power]
-            ))
+            if ai < emp_roofs[gpu][1] / emp_roofs[gpu][0]:
+                patch_source = ColumnDataSource(data=dict(
+                    xs=[[x_left, x_left, x_right, x_right]],
+                    ys=[[0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]],
+                    color=[color],
+                    op=[op],
+                    data_type=[data_type],
+                    gpu=[gpu],
+                    mem=[mem],
+                    power=[power]
+                ))
+            else:
+                patch_source = ColumnDataSource(data=dict(
+                    xs=[[x_left, x_left, x_right, x_right]],
+                    ys=[[0.1, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.1]],
+                    color=[color],
+                    op=[op],
+                    data_type=[data_type],
+                    gpu=[gpu],
+                    mem=[mem],
+                    power=[power]
+                ))
 
             # Draw the patch using patches (plural)
             power_color = p.patches(
@@ -259,7 +271,7 @@ for key, gpu_data in kernels.items():
             
             # Plot on power chart
             # print(power)
-            power_marker = p.scatter('x', 'power', source=source_marker, size=6, color=to_hex(color_map(norm(power))), marker=marker, y_range_name="Power", visible=False)
+            # power_marker = p.scatter('x', 'power', source=source_marker, size=6, color=to_hex(color_map(norm(power))), marker=marker, y_range_name="Power", visible=False)
             
             # Plot efficiency on secondary y-axis
 
@@ -273,16 +285,16 @@ for key, gpu_data in kernels.items():
                 gpu_sources[gpu] = []
 
             op_sources[op].append(marker_plot)
-            op_sources[op].append(power_marker)
-            # op_sources[op].append(power_color)
+            # op_sources[op].append(power_marker)
+            op_sources[op].append(power_color)
             
             data_sources[data].append(marker_plot)
-            data_sources[data].append(power_marker)
-            # data_sources[data].append(power_color)
+            # data_sources[data].append(power_marker)
+            data_sources[data].append(power_color)
             
             gpu_sources[gpu].append(marker_plot)
-            gpu_sources[gpu].append(power_marker)
-            # gpu_sources[gpu].append(power_color)
+            # gpu_sources[gpu].append(power_marker)
+            gpu_sources[gpu].append(power_color)
 # print(gpu_sources.keys())
 
 for gpu, (slope, peak) in emp_roofs.items():
