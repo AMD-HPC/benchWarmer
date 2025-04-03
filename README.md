@@ -14,7 +14,40 @@
 ░░╚═╝░░░╚═╝░░╚═╝░░╚═╝╚═╝░░╚═╝╚═╝░░░░░╚═╝╚══════╝╚═╝░░╚═╝
  ```
 
-benchWarmer is a synthetic microbenchmark suite that measures throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
+benchWarmer is a synthetic microbenchmark suite that measures vector pipe throughput of various operations on integer and floating-point datatypes. This tool is compatible with both AMD and NVIDIA architectures.
+
+The motivation for this tool is to study fundamental vector instruction level throughput performance for both compute-bound and bandwidth-bound workloads using a high-level implementation in CUDA or HIP.
+
+## Implementation
+
+The tool isolates a given vector operation for a given datatype and performs that operation many times in succession. While the amount of memory loaded is fixed, the amount of compute can be adjusted at compile time, using the `nOps` flag. Thus, the user can manually change the arithmetic intensity (ratio of computations to memory accesses), causing the benchmark's performance to be limited by either its compute or its bandwidth capabilities.
+
+An example of a vector addition kernel is shown below. Each value is read from memory once (`a[offset]` on line 18) and stored in registers. The add operation is then performed `nOps` times (line 16) for each value read from memory, making the arithmetic intensity `nOps / sizeof(T)`.
+
+![add_kernel](https://github.com/user-attachments/assets/832597d8-2675-4775-a115-d66ff96e7c2c)
+
+The memory buffer is initalized with random numbers to emulate real world data.
+
+**Supported datatypes:**
+- int8
+- int16
+- int32
+- int64
+- fp16
+- fp32
+- fp64
+
+**Supported operations:**
+- Add
+- Multiply
+- MultiplyAdd
+- Divide
+- Rsqrt
+- ShiftLeft
+- ShiftRight
+- RotateLeft
+- RotateRight
+- Type conversions
 
 ## Build
 For AMD architectures:
@@ -25,14 +58,24 @@ For NVIDIA architectures:
 
 `make nv nOps=<# of ops>`
 
-The optional `nOps` argument (1000 by default) controls how many operations that will be computed on each piece of data. By modifying this number, one can adjust the Arithmetic Intensity of the workload.
+The optional `nOps` argument (1000 by default) controls how many operations that will be computed on each piece of data. See [Implementation](https://github.com/AMD-HPC/benchWarmer/edit/main/README.md#implementation) for information on arithmetic intensity.
 
 ## Run
+
+### Run Script (AMD only)
+This script builds and runs the workload and sends the results to the database.
+
+`./run.sh`
+
+### Run Manually
+
+Alternatively, follow these instructions to manually run the script.
+
 `./benchWarmer-amd <args>`
 or
 `./benchWarmer-nv <args>`
 
-Output will be in a CSV format and sent to the console. One can redirect the output to a file using `>`.
+Output will be in a CSV format and sent to the console. One can redirect the output to a file by appending `|& tee <filename.log>`.
 
 ```
 Arguments:
