@@ -75,7 +75,7 @@ struct Div {
 template<class T>
 struct Rsqrt {
   __device__ T operator()(T x, T y, T z) {
-    return rsqrtf(x);
+    return rsqrtf(y);
   }
 };
 
@@ -312,7 +312,7 @@ static void bench_func(void) {
 
   // WARMUP KERNEL
   // packed_throughput_kernel: FP32 Add, Mul, MulAdd
-  // throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+  // throughput_kernel_unrolled: All Integer Add, Mul
   // throughput_kernel: All other tests
   if (datatype == "fp32" && (op == "MulAdd")) {
     // FP32 MulAdd
@@ -323,8 +323,8 @@ static void bench_func(void) {
   } else if (datatype == "fp32" && (op == "Mul")) {
     // FP32 Mul
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-  } else if ((datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) || op == "Rsqrt") {
-    // Rsqrt, Integer Add, Mul
+  } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
+    // Integer Add, Mul
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
@@ -348,7 +348,7 @@ static void bench_func(void) {
     gpu(DeviceSynchronize());
 
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
-		// throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+		// throughput_kernel_unrolled: All Integer Add, Mul
 		// throughput_kernel: All other tests
     if (datatype == "fp32" && (op == "MulAdd")) {
       // FP32 MulAdd
@@ -365,8 +365,8 @@ static void bench_func(void) {
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-    } else if ((datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) || op == "Rsqrt") {
-      // Rsqrt, Integer Add, Mul
+    } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
+      // Integer Add, Mul
 			initTimeEvents(start, stop);
       throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
