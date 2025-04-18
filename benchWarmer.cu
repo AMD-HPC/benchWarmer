@@ -169,7 +169,7 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			x = func(a[offset], x, y);
+			a[offset] = func(a[offset], x, y);
 		}
 	}
   a[0] = x;
@@ -325,9 +325,11 @@ static void bench_func(void) {
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if ((datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) || op == "Rsqrt") {
     // Rsqrt, Integer Add, Mul
+	totalBytes *= 2;
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
+	totalBytes *= 2;
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
