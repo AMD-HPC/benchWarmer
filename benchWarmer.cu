@@ -172,7 +172,6 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 			a[offset] = func(a[offset], x, y);
 		}
 	}
-  a[0] = x;
 }
 
 // This kernel is similar to throughput_kernel, but it employs a workaround to prevent
@@ -223,10 +222,9 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			x = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
+			a[offset] = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
 		}
 	}
-	a[0] = x;
 }
 
 
@@ -266,6 +264,8 @@ static void bench_func(void) {
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
+  // Each element in memory gets one read and one write
+  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T) * 2;
 
   // Map to get common names of datatypes
   std::unordered_map<std::string, std::string> typeNameLookup = {
@@ -293,7 +293,6 @@ static void bench_func(void) {
 	if(op == "MulAdd") {
 		totalFlops *= 2;
 	}
-  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   T *memBlock;
   assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
@@ -325,11 +324,9 @@ static void bench_func(void) {
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
     // Integer Add, Mul
-	totalBytes *= 2;
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
-	totalBytes *= 2;
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
