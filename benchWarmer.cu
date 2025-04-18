@@ -178,7 +178,7 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		for(int j=0; j<n; j++)
 		{
 			// Two different write locations to force the compiler to complete every operation
-			x = func(a[offset], x, y);
+			a[offset] = func(a[offset], x, y);
 		}
 	}
   a[0] = x;
@@ -341,9 +341,9 @@ static void bench_func(bool rocstar, bool record) {
 	if(op == "MulAdd") {
 		totalFlops *= 2;
 	}
-	if(op == "Rsqrt") {
-		totalFlops *= 2;
-	}
+	// if(op == "Rsqrt") {
+	// 	totalFlops *= 2;
+	// }
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   T *memBlock;
@@ -375,9 +375,11 @@ static void bench_func(bool rocstar, bool record) {
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
     // Integer Add, Mul
+	totalBytes *= 2;
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
+	totalBytes *= 2;
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
