@@ -3,21 +3,28 @@
 #include <cuda.h>
 #include <cuda_runtime.h>
 #include <cuda_fp16.h>  // for __half
+#include <curand_kernel.h>
+#include <algorithm>
 
 #define gpu(symbol) cuda ## symbol
+#define rand(symbol) curand ## symbol
 
 #elif __HIPCC__
 
 #include <hip/hip_runtime.h>
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>  // for __half
+#include <hiprand/hiprand_kernel.h>
 #include <rocSTAR.h>
 
 #define gpu(symbol) hip ## symbol
+#define rand(symbol) hiprand ## symbol
 
 #endif
 
 #include <string>
+#include <typeinfo>
+#include <unordered_map>
 #include <math.h>
 #include <vector>
 #include <getopt.h>
@@ -76,36 +83,7 @@ struct Div {
 template<class T>
 struct Rsqrt {
   __device__ T operator()(T x, T y, T z) {
-    return rsqrtf(x);
-  }
-};
-
-template<class T>
-struct Xor {
-  __device__ T operator()(T x, T y, T z) {
-    return x ^ y;
-  }
-};
-
-template<class T>
-struct Choosery {
-  __device__ T operator()(T x, T y, T z) {
-    return x ^ ((x ^ y) & z); // (x & ~z) | (y & z)
-  }
-};
-
-template<class T>
-struct Majority1 {
-  __device__ T operator()(T x, T y, T z) {
-    Choosery<T> ch;
-    return ch(x, y, (x ^ z));
-  }
-};
-
-template<class T>
-struct Majority2 {
-  __device__ T operator()(T x, T y, T z) {
-    return (x & y) ^ ((x ^ y) & z);
+    return rsqrtf(y);
   }
 };
 
@@ -134,34 +112,6 @@ template<class T>
 struct RotateRight {
   __device__ T operator()(T x, T y, T z) {
     return (x >> y) | (x << (8 * sizeof(T) - y));
-  }
-};
-
-template<class T, int N>
-struct ShiftLeftImm {
-  __device__ T operator()(T x, T y, T z) {
-    return x << N;
-  }
-};
-
-template<class T, int N>
-struct ShiftRightImm {
-  __device__ T operator()(T x, T y, T z) {
-    return x >> N;
-  }
-};
-
-template<class T, int N>
-struct RotateLeftImm {
-  __device__ T operator()(T x, T y, T z) {
-    return (x << N) | (x >> (8 * sizeof(T) - N));
-  }
-};
-
-template<class T, int N>
-struct RotateRightImm {
-  __device__ T operator()(T x, T y, T z) {
-    return (x >> N) | (x << (8 * sizeof(T) - N));
   }
 };
 
@@ -216,8 +166,8 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 
 	T *a;
 	a = &buf[gid];
-	T x = (T)2.2;
-	T y = (T)1.2;
+	T x = a[0];
+	T y = a[1];
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -234,6 +184,8 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
   a[0] = x;
 }
 
+// This kernel is similar to throughput_kernel, but it employs a workaround to prevent
+// the compiler from optimizing out the work for some datatypes/instructions
 template<typename T, int n, class Func>
 __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 {
@@ -243,8 +195,8 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 
 	T *a;
 	a = &buf[gid];
-	T x = (T)2.2;
-	T y = (T)1.2;
+	T x = a[0];
+	T y = a[1];
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -261,7 +213,7 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 	}
 }
 
-// AMD hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
+// MI200 hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
 template<int n, class Func>
 __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 {
@@ -271,20 +223,47 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 
 	float2 *a;
 	a = &buf[gid];
-	float2 x = {2.2f,2.2f};
-	float2 y = {1.2f,1.2f};
+	float2 x = a[0];
+	float2 y = a[1];
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
+	#pragma unroll 1
 	for(uint32_t offset=0; offset < nSize; offset += nThreads)
 	{
+		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			// Two different write locations to force the compiler to complete every operation
 			x = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
 		}
 	}
 	a[0] = x;
+}
+
+// Kernel to convert the datatype of the items in the buffer
+template <class T_in, class T_out>
+__global__ void convertKernel(T_in* d_input, T_out* d_output, size_t num_elements) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    
+    if (gid < num_elements) {
+        d_output[gid] = (T_out)d_input[gid];
+    }
+}
+
+// Kernel to initialize the buffer with random values
+template <class T>
+__global__ void initializeRandom(T *buffer, int nSize, unsigned long long seed) {
+    const uint32_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid < nSize) {
+      rand(State) state;
+      rand(_init)(seed + gid, 0, 0, &state); // Initialize the state with unique seed
+
+      if (std::is_integral<T>::value) {
+        buffer[gid] = rand()(&state) % 100;  // Generate a random integer [0 to 99]
+      } else {
+        buffer[gid] = rand(_uniform)(&state) * 100;  // Generate a random value between [0, 100)
+      }
+    }
 }
 
 template<class T, class Func>
@@ -332,45 +311,73 @@ static void bench_func(bool rocstar, bool record) {
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
+
+  
+  // Map to get common names of datatypes
+	std::unordered_map<std::string, std::string> typeNameLookup = {
+		{typeid(uint32_t).name(), "int32"},
+		{typeid(uint64_t).name(), "int64"},
+		{typeid(float).name(), "fp32"},
+		{typeid(double).name(), "fp64"},
+		{typeid(__half).name(), "fp16"},
+		{typeid(uint16_t).name(), "int16"},
+		{typeid(uint8_t).name(), "int8"}
+	};
+	std::string datatype = typeNameLookup.find(typeid(T).name())->second;
+
+	// op = the name of the operation (after some processing)
+	std::string op = typeid(Func).name();
+	// Remove all numbers (digits)
+	op.erase(std::remove_if(op.begin(), op.end(), ::isdigit), op.end());
+
+	// Find the first occurrence of 'I' and truncate the string at that point
+	size_t pos = op.find('I');
+	if (pos != std::string::npos) { 
+		op = op.substr(0, pos);  // Truncate the string at 'I'
+	}
+
 	// Double flop count for MulAdd tests since MulAdd involves two operations, multiply and add
 	// std::string s = typeid(Func).name();
-	if(s.find("MulAdd") != std::string::npos) {  // if Func has MulAdd in its name
+	if(op == "MulAdd") {
 		totalFlops *= 2;
 	}
 	// if(s.find("Rsqrt") != std::string::npos) {  // if Func has MulAdd in its name
 	// 	totalFlops *= 1.5;
 	// }
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
-    // if(s.find("Rsqrt") != std::string::npos) {  // if Func has MulAdd in its name
-	// 	totalBytes *= 2;
-	// }
 
-  assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+  T *memBlock;
+  assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+
+  // Launch kernel to initialize the buffer in parallel
+  unsigned long long seed = 12345;  // A random seed for random number generation
+
+  // Launch the kernel
+  int blockSize = 256;
+  int gridSize = (nSize + blockSize - 1) / blockSize; // Compute number of blocks
+
+  // Explicitly instantiate the template for the kernel
+  initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
 	
 
   // WARMUP KERNEL
   // packed_throughput_kernel: FP32 Add, Mul, MulAdd
   // throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
   // throughput_kernel: All other tests
-  if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
-	printf("going through kernel\n");
-	// std::cerr << "going through kernel";
+  if (datatype == "fp32" && (op == "MulAdd")) {
+    // FP32 MulAdd
     packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-  } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
+  } else if (datatype == "fp32" && (op == "Add")) {
     // FP32 Add
-	printf("going through kernel\n");
     packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-  } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+  } else if (datatype == "fp32" && (op == "Mul")) {
     // FP32 Mul
-	printf("going through kernel\n");
     packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-  } else if ((strcmp(typeid(T).name(), "h") == 0 || strcmp(typeid(T).name(), "t") == 0 || strcmp(typeid(T).name(), "j") == 0 || strcmp(typeid(T).name(), "m") == 0) && (s.find("3Add") != std::string::npos || s.find("MulI") != std::string::npos || s.find("Rsqrt") != std::string::npos)) {
-    // Rsqrt, Integer Add, Mul
-	printf("going through kernel\n");
+  } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
+    // Integer Add, Mul
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   } else {
     // Every other test
-	printf("going through kernel\n");
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
@@ -380,8 +387,6 @@ static void bench_func(bool rocstar, bool record) {
   gpu(Event_t) start, stop;
 
   // Measurement data 
-  float meanThroughput, stdevThroughput, confidenceThroughput;
-  float meanDuration, stdevDuration, confidenceDuration;
   float *throughputs = (float *)calloc(numExperiments, sizeof(float));
   float *durations = (float *)calloc(numExperiments, sizeof(float));
 
@@ -396,26 +401,30 @@ static void bench_func(bool rocstar, bool record) {
 
   for (int n=0; n<numExperiments; n++)
   {
+    // Launch kernel to initialize the buffer in parallel
+    initializeRandom<<<gridSize, blockSize>>>(memBlock, nSize, seed + n);
+    gpu(DeviceSynchronize());
+
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
-		// throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+		// throughput_kernel_unrolled: All Integer Add, Mul
 		// throughput_kernel: All other tests
-    if (strcmp(typeid(T).name(), "f") == 0 && (s.find("MulAdd") != std::string::npos)) {
+    if (datatype == "fp32" && (op == "MulAdd")) {
       // FP32 MulAdd
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-    } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Add") != std::string::npos)) {
+    } else if (datatype == "fp32" && (op == "Add")) {
       // FP32 Add
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-    } else if (strcmp(typeid(T).name(), "f") == 0 && (s.find("Mul") != std::string::npos)) {
+    } else if (datatype == "fp32" && (op == "Mul")) {
       // FP32 Mul
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-    } else if (s.find("Rsqrt") != std::string::npos || ((strcmp(typeid(T).name(), "h") == 0 || strcmp(typeid(T).name(), "t") == 0 || strcmp(typeid(T).name(), "j") == 0 || strcmp(typeid(T).name(), "m") == 0) && (s.find("3Add") != std::string::npos || s.find("MulI") != std::string::npos))) {
-      // Rsqrt, Integer Add, Mul
+    } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
+      // Integer Add, Mul
 			initTimeEvents(start, stop);
       throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
@@ -436,6 +445,8 @@ static void bench_func(bool rocstar, bool record) {
 	}
   #endif
 
+  float meanThroughput, stdevThroughput, confidenceThroughput;
+  float meanDuration, stdevDuration, confidenceDuration;
   // Calculate summary statistics
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
@@ -544,87 +555,155 @@ static void bench_func(bool rocstar, bool record) {
   gpu(Free(memBlock));
 }
 
+template<class T_in, class T_out>
+static void bench_convert(void) {
+  
+  int numWorkgroups = DEFAULT_WORKGROUPS;
+  int workgroupSize = DEFAULT_WORKGROUP_SIZE;
+  int numExperiments = DEFAULT_NUM_EXPERIMENTS;
+
+  uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
+  int nSize = DEFAULT_DATASET_SIZE/sizeof(T_in);  // total number of ints/floats
+
+  // Map to get common names of datatypes
+  std::unordered_map<std::string, std::string> typeNameLookup = {
+      {typeid(uint32_t).name(), "int32"},
+      {typeid(uint64_t).name(), "int64"},
+      {typeid(float).name(), "fp32"},
+      {typeid(double).name(), "fp64"},
+      {typeid(__half).name(), "fp16"},
+      {typeid(uint16_t).name(), "int16"},
+      {typeid(uint8_t).name(), "int8"}
+  };
+  std::string datatype_in = typeNameLookup.find(typeid(T_in).name())->second;
+  std::string datatype_out = typeNameLookup.find(typeid(T_out).name())->second;
+
+  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)(sizeof(T_in) + sizeof(T_out));
+  uint64_t totalOps = nSize;
+
+  T_in *d_input;
+  T_out *d_output;
+  assert(gpu(Malloc((void**)&d_input, nSize * sizeof(T_in)))==gpu(Success));
+  assert(gpu(Malloc((void**)&d_output, nSize * sizeof(T_out)))==gpu(Success));
+
+  // Launch kernel to initialize the buffer in parallel
+  unsigned long long seed = 12345;  // A random seed for random number generation
+
+  // Launch the kernel
+  int blockSize = 256;
+  int gridSize = (nSize + blockSize - 1) / blockSize; // Compute number of blocks
+
+  // Explicitly instantiate the template for the kernel
+  initializeRandom<T_in><<<gridSize, blockSize>>>(d_input, nSize, seed);
+  gpu(DeviceSynchronize());
+  
+  // Warmup kernel
+  convertKernel<T_in, T_out><<<numWorkgroups, workgroupSize>>>(d_input, d_output, nSize);
+
+	// Timing data
+  float eventMs;
+  gpu(Event_t) start, stop;
+
+  // Measurement data 
+  float *throughputs = (float *)calloc(numExperiments, sizeof(float));
+  float *durations = (float *)calloc(numExperiments, sizeof(float));
+
+	// Run experiments
+  for (int n=0; n<numExperiments; n++)
+  {
+    // Launch kernel to initialize the buffer in parallel
+    initializeRandom<<<gridSize, blockSize>>>(d_input, nSize, seed + n);
+    gpu(DeviceSynchronize());
+
+
+    // Launch kernel to convert float to double
+    initTimeEvents(start, stop);
+    convertKernel<T_in, T_out><<<numWorkgroups, workgroupSize>>>(d_input, d_output, nSize);
+    stopTimeEvents(eventMs, start, stop);
+
+    durations[n] = eventMs;
+    throughputs[n] = (float) totalOps / eventMs / 1e6;  // Unit: GFLOPs/sec
+  }
+
+  // Calculate summary statistics
+  float meanThroughput, stdevThroughput, confidenceThroughput;
+  float meanDuration, stdevDuration, confidenceDuration;
+
+  stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
+  stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
+
+	// Print output
+  printf("%s, cast-%s, %f, %.3f, %.3f, %lu, %lu, %.3f, %d, %lu, %d\n", datatype_in.c_str(), datatype_out.c_str(), meanThroughput, stdevThroughput, meanDuration, totalOps, totalBytes, ((float)totalOps/(float)totalBytes), numWorkgroups, nThreads, numExperiments);
+
+  // Clean up time
+  gpu(Free(d_input));
+  gpu(Free(d_output));
+}
+
 template<class T>
-static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool xorFunc, bool shift, bool rotate, bool choosery, bool majority, bool rocstar, bool record) {
+static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool shift, bool rotate, bool convert) {
 	if(add) {
-		printf("  Add test: ");
-		bench_func<T,Add<T>>(rocstar, record);
+		bench_func<T,Add<T>>();
 	}
 	if(mul) {
-		printf("  Mul test: ");
-		bench_func<T,Mul<T>>(rocstar, record);
+		bench_func<T,Mul<T>>();
 	}
 	if(muladd) {
-		printf("  MulAdd test: ");
-		bench_func<T,MulAdd<T>>(rocstar, record);
+		bench_func<T,MulAdd<T>>();
 	}
 	if(div) {
-		printf("  Div test: ");
-		bench_func<T,Div<T>>(rocstar, record);
+		bench_func<T,Div<T>>();
 	}
 	if(rsq) {
-		printf("  Rsqrt test: ");
-		bench_func<T,Rsqrt<T>>(rocstar, record);
-	}
-	if(xorFunc) {
-		printf("  Xor test: ");
-		bench_func<T,Xor<T>>(rocstar, record);
+		bench_func<T,Rsqrt<T>>();
 	}
 	if(shift) {
-		printf("  ShiftLeft test: ");
-		bench_func<T,ShiftLeft<T>>(rocstar, record);
-		printf("  ShiftRight test: ");
-		bench_func<T,ShiftRight<T>>(rocstar, record);
-		printf("  ShiftLeftImm test: ");
-		bench_func<T,ShiftLeftImm<T,3>>(rocstar, record);
-		printf("  ShiftRightImm test: ");
-		bench_func<T,ShiftRightImm<T,3>>(rocstar, record);
+		bench_func<T,ShiftLeft<T>>();
+		bench_func<T,ShiftRight<T>>();
 	}
 	if(rotate) {
-		printf("  RotateLeft test: ");
-		bench_func<T,RotateLeft<T>>(rocstar, record);
-		printf("  RotateRight test: ");
-		bench_func<T,RotateRight<T>>(rocstar, record);
-		printf("  RotateLeftImm test: ");
-		bench_func<T,RotateLeftImm<T,3>>(rocstar, record);
-		printf("  RotateRightImm test: ");
-		bench_func<T,RotateRightImm<T,3>>(rocstar, record);
+		bench_func<T,RotateLeft<T>>();
+		bench_func<T,RotateRight<T>>();
 	}
-	if(choosery) {
-		printf("  Choosery test: ");
-		bench_func<T,Choosery<T>>(rocstar, record);
-	}
-	if(majority) {
-		printf("  Majority1 test: ");
-		bench_func<T,Majority1<T>>(rocstar, record);
-		printf("  Majority2 test: ");
-		bench_func<T,Majority2<T>>(rocstar, record);
-	}
+  if(convert) {
+    bench_convert<T,uint8_t>();
+    bench_convert<T,uint16_t>();
+    bench_convert<T,uint32_t>();
+    bench_convert<T,uint64_t>();
+    bench_convert<T,__half>();
+    bench_convert<T,float>();
+    bench_convert<T,double>();
+  }
 }
 
 
+// Run relevent tests for floating point types
 template<class T>
-static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool rocstar, bool record) {
+static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool convert) {
 	if(add) {
-		printf("  Add test: ");
-		bench_func<T,Add<T>>(rocstar, record);
+		bench_func<T,Add<T>>();
 	}
 	if(mul) {
-		printf("  Mul test: ");
-		bench_func<T,Mul<T>>(rocstar, record);
+		bench_func<T,Mul<T>>();
 	}
 	if(muladd) {
-		printf("  MulAdd test: ");
-		bench_func<T,MulAdd<T>>(rocstar, record);
+		bench_func<T,MulAdd<T>>();
 	}
 	if(div) {
-		printf("  Div test: ");
-		bench_func<T,Div<T>>(rocstar, record);
+		bench_func<T,Div<T>>();
 	}
 	if(rsq) {
-		printf("  Rsqrt test: ");
-		bench_func<T,Rsqrt<T>>(rocstar, record);
+		bench_func<T,Rsqrt<T>>();
 	}
+  if(convert) {
+    bench_convert<T,uint8_t>();
+    bench_convert<T,uint16_t>();
+    bench_convert<T,uint32_t>();
+    bench_convert<T,uint64_t>();
+    bench_convert<T,__half>();
+    bench_convert<T,float>();
+    bench_convert<T,double>();
+  }
 }
 
 int main(int argc, char **argv)
@@ -632,7 +711,7 @@ int main(int argc, char **argv)
 
 	//CLI parsing
 	bool i8 = false, i16 = false, i32 = false, i64 = false, fp16 = false, fp32 = false, fp64 = false;
-	bool add = false, mul = false, muladd = false, div = false, rsq = false, xorFunc = false, shift = false, rotate = false, choosery = false, majority = false;
+	bool add = false, mul = false, muladd = false, div = false, rsq = false, shift = false, rotate = false, convert = false;
 	bool rocstar = false, record = false;
 
 	int c, option_index = 0;
@@ -653,17 +732,15 @@ int main(int argc, char **argv)
 					{"muladd",  no_argument,   0,  'm' },
 					{"div",     no_argument,   0,  't' },
 					{"rsqrt",   no_argument,   0,  'n' },
-					{"xor",     no_argument,   0,  's' },
 					{"shift",   no_argument,   0,  'o' },
 					{"rotate",  no_argument,   0,  'p' },
-					{"choosery",no_argument,   0,  'q' },
-					{"majority",no_argument,   0,  'r' },
+					{"convert", no_argument,   0,  'q' },
 					{"rocstar",no_argument, 0},
 					{"record",no_argument, 0},
 					{"gpu",     required_argument, 0,  'u' },
 					{0,         0,             0,  0   }
 			};
-	while ((c = getopt_long_only(argc, argv, "agbcdefiju:", long_options, &option_index)) != -1){
+	while ((c = getopt_long_only(argc, argv, "agbcdefijklmnopqu:", long_options, &option_index)) != -1){
 		if (c == -1)
 			break;
 
@@ -671,7 +748,7 @@ int main(int argc, char **argv)
 		{
 			case 'a':
 				i8=1, i16=1, i32=1, i64=1;
-				fp32=1, fp64=1;
+				fp16=1, fp32=1, fp64=1;
 				printf("Selected all tests\n");
 				break;
 			case 'g':
@@ -730,10 +807,6 @@ int main(int argc, char **argv)
 				rsq = 1;
 				printf("Selected Rsqrt test\n");
 				break;
-			case 's':
-				xorFunc = 1;
-				printf("Selected XOR test\n");
-				break;
 			case 'o':
 				shift = 1;
 				printf("Selected Shift test\n");
@@ -743,8 +816,7 @@ int main(int argc, char **argv)
 				printf("Selected Rotate test\n");
 				break;
 			case 'q':
-				choosery = 1;
-				printf("Selected Choosery test\n");
+				convert = 1;
 				break;
 			case 'u':
 				printf("Selected GPU: %s\n", optarg);
@@ -777,8 +849,8 @@ int main(int argc, char **argv)
 				printf("\n  --int8, run int8 tests");
 				printf("\n  --int16, run int16 tests");
 				printf("\n  --int32, run int32 tests");
-				printf("\n  --int64, run int64 tests");
-				printf("\n  --fp16, run fp16 tests\n");
+				printf("\n  --int64, run int64 tests\n");
+				printf("\n  --fp16, run fp16 tests");
 				printf("\n  --fp32, run fp32 tests");
 				printf("\n  --fp64, run fp64 tests\n");
 
@@ -788,50 +860,41 @@ int main(int argc, char **argv)
 				printf("\n  --muladd, run MulAdd tests only");
 				printf("\n  --div, run Division tests only");
 				printf("\n  --rsqrt, run rsqrt tests only");
-				printf("\n  --xor, run XOR tests only");
 				printf("\n  --shift, run Shift tests only");
 				printf("\n  --rotate, run Rotate tests only");
-				printf("\n  --choosery, run Choosery tests only");
-				printf("\n  --majority, run Majority tests only");
+				printf("\n  --convert, run Type Conversion tests only");
 				printf("\n\n");
 				exit(1);
 		}
 	}
-	// If no operation is selected, do all of them
-	if (! (add || mul || muladd || div || rsq || xorFunc || shift || rotate || choosery || majority)) {
-		printf("Selected all operation tests\n");
-		add=1, mul=1, muladd=1, div=1, rsq=1, xorFunc=1, shift=1, rotate=1, choosery=1, majority=1;
-	}
-	if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
-		printf("Selected all datatype tests\n");
-		i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
-	}
-  if (i8) {
-    printf("\nRunning int8 tests:\n");
-    bench_int<uint8_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
-  }
-  if (i16) {
-		printf("\nRunning int16 tests:\n");
-		bench_int<uint16_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
-  }
-  if (i32) {
-		printf("\nRunning int32 tests:\n");
-		bench_int<uint32_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
-  }
-  if (i64) {
-		printf("\nRunning int64 tests:\n");
-		bench_int<uint64_t>(add, mul, muladd, div, rsq, xorFunc, shift, rotate, choosery, majority, rocstar, record);
-  }
-  if (fp16) {
-		printf("\nRunning FP16 tests:\n");
-		bench_fp<__half>(add, mul, muladd, div, rsq, rocstar, record);
-  }
-  if (fp32) {
-		printf("\nRunning FP32 tests:\n");
-		bench_fp<float>(add, mul, muladd, div, rsq, rocstar, record);
-  }
-  if (fp64) {
-		printf("\nRunning FP64 tests:\n");
-		bench_fp<double>(add, mul, muladd, div, rsq, rocstar, record);
-  }
+// If no operation/datatype is selected, do all of them
+if (! (add || mul || muladd || div || rsq || shift || rotate || convert)) {
+	add=1, mul=1, muladd=1, div=1, rsq=1, shift=1, rotate=1, convert=1;
+}
+if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
+	i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
+}
+// Print header for CSV file
+printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
+if (i8) {
+bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+}
+if (i16) {
+	bench_int<uint16_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+}
+if (i32) {
+	bench_int<uint32_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+}
+if (i64) {
+	bench_int<uint64_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+}
+if (fp16) {
+	bench_fp<__half>(add, mul, muladd, div, rsq, convert, rocstar, record);
+}
+if (fp32) {
+	bench_fp<float>(add, mul, muladd, div, rsq, convert, rocstar, record);
+}
+if (fp64) {
+	bench_fp<double>(add, mul, muladd, div, rsq, convert, rocstar, record);
+}
 }
