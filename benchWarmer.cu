@@ -11,6 +11,7 @@
 #include <hip/hip_runtime.h>
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>  // for __half
+#include <rocSTAR.h>
 
 #define gpu(symbol) hip ## symbol
 
@@ -25,7 +26,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <fstream>
-#include <rocSTAR.h>
 // #include <iostream>
 #include <assert.h>
 
@@ -337,7 +337,13 @@ static void bench_func(bool rocstar, bool record) {
 	if(s.find("MulAdd") != std::string::npos) {  // if Func has MulAdd in its name
 		totalFlops *= 2;
 	}
+	// if(s.find("Rsqrt") != std::string::npos) {  // if Func has MulAdd in its name
+	// 	totalFlops *= 1.5;
+	// }
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
+    // if(s.find("Rsqrt") != std::string::npos) {  // if Func has MulAdd in its name
+	// 	totalBytes *= 2;
+	// }
 
   assert((gpu(Malloc(&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
 	
@@ -380,12 +386,14 @@ static void bench_func(bool rocstar, bool record) {
   float *durations = (float *)calloc(numExperiments, sizeof(float));
 
 	// Run experiments
-  if (rocstar == true) {
-	rocStarInit();
-	char *kernelName = (char*)"throughputKernel";
-	rocStarStart(kernelName);
-  }
-  
+  #if __HIPCC__
+	if (rocstar == true) {
+		rocStarInit();
+		char *kernelName = (char*)"throughputKernel";
+		rocStarStart(kernelName);
+	}
+  #endif
+
   for (int n=0; n<numExperiments; n++)
   {
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
@@ -421,10 +429,12 @@ static void bench_func(bool rocstar, bool record) {
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
   }
-  if (rocstar == true) {
-	rocStarStop();
-  	rocStarFinalize();
-  }
+  #if __HIPCC__
+	if (rocstar == true) {
+		rocStarStop();
+		rocStarFinalize();
+	}
+  #endif
 
   // Calculate summary statistics
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
@@ -517,15 +527,15 @@ static void bench_func(bool rocstar, bool record) {
 			}
 			csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
 			csvFile.close();
-			std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
-			if (outFile.is_open()) {
-				outFile << meanDuration << std::endl;
-				outFile.close();
-			}
 			printf("Results written to %s\n", filename.c_str());
 		} else {
 			printf("Error opening %s\n", filename.c_str());
 		}
+	}
+	std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
+	if (outFile.is_open()) {
+		outFile << meanDuration << std::endl;
+		outFile.close();
 	}
 	
 	  
