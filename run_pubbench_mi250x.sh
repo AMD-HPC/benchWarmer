@@ -2,7 +2,7 @@
 ##SBATCH -w x1000c3s5b1n0
 ##SBATCH -w x1000c2s5b1n0
 #SBATCH --gpus-per-node=1
-#SBATCH --time=12:00:00
+#SBATCH --time=36:00:00
 #SBATCH --output=./slurm_output/mi250x.out
 #SBATCH --error=./slurm_output/mi250x.err
 
@@ -16,7 +16,7 @@
 
 nOps=()
 # nOps=2
-for ((i=1; i<16; i++)); do
+for ((i=0; i<16; i++)); do
     nOp=$(echo "2^$i" | bc)
     nOps+=($nOp)
 done
@@ -26,6 +26,8 @@ export LD_LIBRARY_PATH="$ROCSTAR_ROOT/lib:$LD_LIBRARY_PATH"
 AGT_PATH="../agt_files/agt_internal"
 
 GPU="MI250X"
+rm "pubbench_results_${GPU}.csv"
+touch "pubbench_results_${GPU}.csv"
 opTypes=("add" "mul" "muladd" "div" "rsqrt")
 dataTypes=("int8" "int16" "int32" "int64" "fp16" "fp32" "fp64")
 EXP=10
@@ -38,21 +40,20 @@ for nOp in "${nOps[@]}"; do
     # make clean
     EXP=10
     make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
-    ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
-    AVG_TIME=$(cat meanDuration.txt)
-    EXP=$(echo "(20000 / $AVG_TIME + 0.5)/1" | bc)
-    echo "New exp: $EXP"
-    make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
+    # ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
+    # AVG_TIME=$(cat meanDuration.txt)
+    # EXP=$(echo "(20000 / $AVG_TIME + 0.5)/1" | bc)
+    # echo "New exp: $EXP"
 
     for opType in "${opTypes[@]}"; do
         for dataType in "${dataTypes[@]}"; do
-            # EXP=5
+            EXP=10
             # echo "nOps: ${nOp}, opType: ${opType}, dataType: ${dataType}"
-            # ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
+            ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
 
-            # AVG_TIME=$(cat meanDuration.txt)
-            # EXP=$(echo "(1500 / $AVG_TIME + 0.5)/1" | bc)
-            # echo "New exp: $EXP"
+            AVG_TIME=$(cat meanDuration.txt)
+            EXP=$(echo "(20000 / $AVG_TIME + 0.5)/1" | bc)
+            echo "New exp: $EXP"
             # ((EXP=17/AVG_TIME))
             
             # if AI >
@@ -64,7 +65,7 @@ for nOp in "${nOps[@]}"; do
             # AGT_CMD="sudo $AGT_PATH -unilog=PM -unilogallgroups -i=0,1,2,3,4,5,6,7 -unilogperiod=50 -unilogoutput=${AGT_OUTPUT_FILE} &"
             # eval $AGT_CMD
             # echo "Starting AGT: $(date)"
-            # make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
+            make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
             ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"  --rocstar --record
         done
     done

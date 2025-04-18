@@ -1,7 +1,8 @@
 #!/bin/bash
 #SBATCH -p MI300x
+#SBATCH -w TheraC18
 #SBATCH --gpus-per-node=1
-#SBATCH --time=36:00:00
+#SBATCH --time=05:00:00
 #SBATCH --output=./slurm_output/mi300x.out
 #SBATCH --error=./slurm_output/mi300x.err
 
@@ -10,13 +11,13 @@
 # echo "$SCRIPT_DIR"
 module load rocm
 
-cd "/home/khoffmey/work/PubBench"
+# cd "/home/khoffmey/work/PubBench"
 # pwd
 # ls
 
 nOps=()
 # nOps=2
-for ((i=1; i<16; i++)); do
+for ((i=0; i<16; i++)); do
     nOp=$(echo "2^$i" | bc)
     nOps+=($nOp)
 done
@@ -41,7 +42,7 @@ for nOp in "${nOps[@]}"; do
     make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
     ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
     AVG_TIME=$(cat meanDuration.txt)
-    EXP=$(echo "(1500 / $AVG_TIME + 0.5)/1" | bc)
+    EXP=$(echo "(2000 / $AVG_TIME + 0.5)/1" | bc)
     echo "New exp: $EXP"
     make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
 
@@ -66,7 +67,12 @@ for nOp in "${nOps[@]}"; do
             # eval $AGT_CMD
             # echo "Starting AGT: $(date)"
             # make -B amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
-            ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"  --rocstar --record
+            ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType" --record --rocstar
+
+            # NVIDIA_OUTPUT_FILE="./nvidia_metrics/$GPU/hw_metrics_${nOp}_${opType}_${dataType}.csv"
+            # ./benchWarmer-nv_${GPU}_${nOp}_10 -u "$GPU" --"$opType" --"$dataType" --record
+            # nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,clocks.sm --format=csv -l 1 > $NVIDIA_OUTPUT_FILE & PID=$!
+            # ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType" 
         done
     done
 done

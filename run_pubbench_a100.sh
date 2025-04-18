@@ -2,33 +2,56 @@
 #SBATCH -p caldera
 #SBATCH -w TheraC10
 #SBATCH --gpus-per-node=1
-#SBATCH --time=05:00:00
-#SBATCH --output=/home/khoffmey/work/gpu_power_frequency_study/slurm_output/pubbench_job.out
-#SBATCH --error=/home/khoffmey/work/gpu_power_frequency_study/slurm_output/pubbench_job.err
+#SBATCH --time=10:00:00
+#SBATCH --output=./slurm_output/a100.out
+#SBATCH --error=./slurm_output/a100.err
 
 # SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # cd "$SCRIPT_DIR"
 # echo "$SCRIPT_DIR"
 cd "/home/khoffmey/work/PubBench"
 module load CUDA
+
+GPU="A100"
 # pwd
 # ls
+# rm pubbench_results_$GPU.csv
+# touch pubbench_results_$GPU.csv
+opTypes=("add" "mul" "muladd" "div" "rsqrt")
+dataTypes=("int8" "int16" "int32" "int64" "fp16" "fp32" "fp64")
 
 nOps=()
 # nOps=2
-for ((i=1; i<16; i++)); do
+for ((i=0; i<16; i++)); do
     nOp=$(echo "2^$i" | bc)
     nOps+=($nOp)
 done
 
-GPU="A100"
-
+EXP=100
+mkdir -p "nvidia_metrics/$GPU"
 for nOp in "${nOps[@]}"; do
-    echo "Running PubBench with $nOp ops"
-    # make clean
-    make nv nOps=$nOp GPU=$GPU
-    echo "Running benchWarmer-nv_$nOp -u $GPU"
-    ./benchWarmer-nv_${GPU}_$nOp -u "$GPU" --add --mul --muladd --div --rsqrt
+    EXP=10
+    make nv nOps=$nOp GPU=$GPU EXP=$EXP
+    ./benchWarmer-nv_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
+    AVG_TIME=$(cat meanDuration.txt)
+    EXP=$(echo "(3000 / $AVG_TIME + 0.5)/1" | bc)
+    echo "New exp: $EXP"
+    make nv nOps=$nOp GPU=$GPU EXP=$EXP
+    for opType in "${opTypes[@]}"; do
+        for dataType in "${dataTypes[@]}"; do
+            echo "Running PubBench with $nOp ops"
+            # make clean
+            echo "Running $opType and $dataType"
+            NVIDIA_OUTPUT_FILE="./nvidia_metrics/$GPU/hw_metrics_${nOp}_${opType}_${dataType}.csv"
+            ./benchWarmer-nv_${GPU}_${nOp}_10 -u "$GPU" --"$opType" --"$dataType"
+
+            nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,clocks.sm --format=csv -lms 10 > $NVIDIA_OUTPUT_FILE & PID=$!
+        
+            timeout 3s ./benchWarmer-nv_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
+            
+            kill $PID
+        done
+    done
 done
 
 
