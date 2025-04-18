@@ -75,7 +75,7 @@ struct Div {
 template<class T>
 struct Rsqrt {
   __device__ T operator()(T x, T y, T z) {
-    return rsqrtf(y);
+    return rsqrtf(x);
   }
 };
 
@@ -170,31 +170,6 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		for(int j=0; j<n; j++)
 		{
 			a[offset] = func(a[offset], x, y);
-		}
-	}
-  a[0] = x;
-}
-
-template<typename T, int n>
-__global__ void rsqrt_kernel(T *buf, uint32_t nSize)
-{
-	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
-	const uint32_t nThreads  = gridDim.x * blockDim.x;
-
-	T *a;
-	a = &buf[gid];
-	T x = a[0];
-	T y = a[1];
-	// Func func;
-
-	// Unroll to prevent the compiler from optimizing out the work
-	#pragma unroll 1
-	for(uint32_t offset=0; offset < nSize; offset += nThreads)
-	{
-		#pragma unroll
-		for(int j=0; j<n; j++)
-		{
-			a[offset] = rsqrtf(a[offset]);
 		}
 	}
   a[0] = x;
@@ -320,9 +295,6 @@ static void bench_func(void) {
 
     if(op == "MulAdd") {
 	 totalFlops *= 2;
-	}
-	if(op == "Rsqrt") {
-		totalFlops *= 2;
 	}
 
   T *memBlock;
