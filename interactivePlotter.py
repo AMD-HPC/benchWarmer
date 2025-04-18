@@ -10,7 +10,7 @@ import plotly.express as px
 from collections import defaultdict
 from bokeh.plotting import figure, show
 from bokeh.models import LinearColorMapper, ColorBar, BasicTicker, Title, Label
-from bokeh.models import ColumnDataSource, CheckboxGroup, Button, FixedTicker, LogScale, LinearScale, CustomJS, Range1d, DataRange1d
+from bokeh.models import ColumnDataSource, CheckboxGroup, Button, FixedTicker, LogScale, LinearScale, CustomJS, Range1d, DataRange1d, Spacer
 from bokeh.models.widgets import RadioButtonGroup, RadioGroup
 from bokeh.models.axes import LinearAxis
 from bokeh.layouts import column, row
@@ -104,6 +104,9 @@ if args.results:
                     gpu = row_data['GPU']
                     ai_value = row_data[ai_data_op_mem_col]
                     perf_value = row_data['PERF']
+                    # if 'RSQ' in ai_data_op_mem_col:
+                    #     perf_value *= 1.5
+                    #     ai_value *= 0.75
                     power_value = row_data['Power']
                     kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
@@ -122,44 +125,68 @@ op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 # Create Bokeh figure
 tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
 p = figure(x_axis_type='log', y_range=(0.1, 1e3), x_range=(0.1, 1e5), y_axis_type='log', title='Empirical Rooflines',
-           x_axis_label='Arithmetic Intensity (FLOPs/Byte)',
+           x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
+p.title.text_font_size = '14pt'
+p.xaxis.axis_label_text_font_size = '12pt'
+p.yaxis.axis_label_text_font_size = '12pt'
+p.xaxis.major_label_text_font_size = '10pt'
+p.yaxis.major_label_text_font_size = '10pt'
+
+p.toolbar_location = None
+
+# Create a toolbar box manually (you can also use p.toolbar as the toolbar itself)
+# toolbar = Toolbar(toolbar=p.toolbar, toolbar_location="right")
 # Dictionaries to hold references to the plotted lines
 op_sources = {}
 data_sources = {}
 gpu_sources = {}
 
-min_power = 200
-max_power = df['Power'].max()
-norm = plt.Normalize(
-    min_power,
-    max_power,
-)
-color_map = LinearSegmentedColormap.from_list(
-    'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
-)
+# min_power = 200
+# max_power = df['Power'].max()
+# norm = plt.Normalize(
+#     min_power,
+#     max_power,
+# )
+# color_map = LinearSegmentedColormap.from_list(
+#     'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
+# )
 
-# Convert to a hex palette
-rgba_colors = [to_rgba(color_map(i / 255), alpha=0.7) for i in range(256)]  # 0.3 = 30% opacity
-hex_colors_with_alpha = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}{int(a*255):02x}' 
-                         for r, g, b, a in rgba_colors]
+# # Convert to a hex palette
+# rgba_colors = [to_rgba(color_map(i / 255), alpha=0.7) for i in range(256)]  # 0.3 = 30% opacity
+# hex_colors_with_alpha = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}{int(a*255):02x}' 
+#                          for r, g, b, a in rgba_colors]
 
-# Create Bokeh color mapper
-color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
+# # Create Bokeh color mapper
+# color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
 
-# Add the color bar
-color_bar = ColorBar(
-    color_mapper=color_mapper,
-    ticker=BasicTicker(),
-    label_standoff=12,
-    border_line_color=None,
-    location=(0, 0)
-)
+# # Add the color bar
+# color_bar = ColorBar(
+#     color_mapper=color_mapper,
+#     ticker=BasicTicker(),
+#     label_standoff=12,
+#     border_line_color=None,
+#     location=(0, 0)
+# )
 
-p.add_layout(color_bar, 'right')
+# p.add_layout(color_bar, 'right')
 
-power_label = Title(text='Power (W)', offset=45)
-p.add_layout(power_label, 'right')
+# y_axis_style = {
+#     "text_font": p.yaxis[0].axis_label_text_font,
+#     "text_font_size": p.yaxis[0].axis_label_text_font_size,
+#     "text_font_style": p.yaxis[0].axis_label_text_font_style,
+#     "text_color": p.yaxis[0].axis_label_text_color,
+# }
+
+# power_label = Title(
+#     text='Power (W)',
+#     text_font=y_axis_style["text_font"],
+#     text_font_size=y_axis_style["text_font_size"],
+#     text_font_style=y_axis_style["text_font_style"],
+#     text_color=y_axis_style["text_color"],
+#     offset=45
+# )
+# p.add_layout(power_label, 'right')
 
 log_width = 0.303
 
@@ -181,7 +208,7 @@ for key, gpu_data in kernels.items():
     marker = op_type_markers[op]
 
     for gpu, ai_data in gpu_data.items():
-        color = gpu_type_colors[gpu]
+        # color = gpu_type_colors[gpu]
         y_range = p.y_range
         # color_map = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
         roofline = False
@@ -190,7 +217,7 @@ for key, gpu_data in kernels.items():
             x_left = ai / (10 ** (log_width / 2))
             x_right = ai * (10 ** (log_width / 2))
             bar_width = x_right - x_left
-            color = to_hex(color_map(norm(power)))
+            # color = to_hex(color_map(norm(power)))
 
             slope, peak = emp_roofs[gpu]
 
@@ -226,37 +253,74 @@ for key, gpu_data in kernels.items():
             scatter_data["power"].append(power)
             scatter_data["xs"].append(x_patch)
             scatter_data["ys"].append(y_patch)
-            scatter_data["color"].append(color)
+            scatter_data["color"].append(None)
             
             if gpu not in gpu_sources:
                 gpu_sources[gpu] = []
-print(scatter_data)
-source_all = ColumnDataSource(data=scatter_data)
-source_full = ColumnDataSource(data=scatter_data)
-
-scatter_renderer = p.scatter(
-    x="x", y="y", source=source_all,
-    size=12, color='black', marker='circle', visible=False
-)
-
-power_renderer = p.patches(
-    xs='xs',
-    ys='ys',
-    source=source_all,
-    fill_color='color',
-    fill_alpha=0.7,
-    line_color=None,
-    level='underlay',
-    visible=False
-)
-
-hover_tool = HoverTool(
-    tooltips=tooltips,
-    renderers=[scatter_renderer],
-)
-p.add_tools(hover_tool)
+# print(scatter_data)
 
 for gpu, (slope, peak) in emp_roofs.items():
+    min_power = df[df['GPU'] == gpu]['Power'].min()
+    max_power = df[df['GPU'] == gpu]['Power'].max()
+    min_power = math.floor(min_power / 50) * 50
+    max_power = math.ceil(max_power / 50) * 50
+    norm = plt.Normalize(
+        min_power,
+        max_power,
+    )
+    color_map = LinearSegmentedColormap.from_list(
+        'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
+    )
+
+    # Convert to a hex palette
+    rgba_colors = [to_rgba(color_map(i / 255), alpha=0.7) for i in range(256)]  # 0.3 = 30% opacity
+    hex_colors_with_alpha = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}{int(a*255):02x}' 
+                            for r, g, b, a in rgba_colors]
+
+    # Create Bokeh color mapper
+    color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
+
+    # Add the color bar
+    color_bar = ColorBar(
+        color_mapper=color_mapper,
+        ticker=BasicTicker(),
+        label_standoff=12,
+        border_line_color=None,
+        location=(0, 0),
+        visible=False
+    )
+
+    y_axis_style = {
+        "text_font": p.yaxis[0].axis_label_text_font,
+        "text_font_size": p.yaxis[0].axis_label_text_font_size,
+        "text_font_style": p.yaxis[0].axis_label_text_font_style,
+        "text_color": p.yaxis[0].axis_label_text_color,
+    }
+    p.add_layout(color_bar, 'right')
+
+    power_label = Title(
+        text='Power (W)',
+        text_font=y_axis_style["text_font"],
+        text_font_size=y_axis_style["text_font_size"],
+        text_font_style=y_axis_style["text_font_style"],
+        text_color=y_axis_style["text_color"],
+        offset=220,
+        visible=False,
+    )
+
+    p.add_layout(power_label, 'right')
+
+    for i, gpu_entry in enumerate(scatter_data['gpu']):
+        if gpu_entry == gpu:
+            power = scatter_data['power'][i]
+            # if gpu == 'MI300A':
+            #     print(power)
+            #     print(df[df['GPU'] == 'GPU']['Power'].min())
+            #     print(df[df['GPU'] == 'GPU']['Power'].max())
+            #     print(to_hex(color_map(norm(power))))
+            # print(to_hex(color_map(norm(power))))
+            scatter_data['color'][i] = to_hex(color_map(norm(power)))
+    
     # mem = key.split('_')[0]
     # op = key.split('_')[1]
     # data = key.split('_')[2]
@@ -281,8 +345,38 @@ for gpu, (slope, peak) in emp_roofs.items():
     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
     slope.name = 'roofline'
     peak.name = 'roofline'
+    color_bar.name = 'power'
+    power_label.name = 'power'
+    
     gpu_sources[gpu].append(slope)
     gpu_sources[gpu].append(peak)
+    gpu_sources[gpu].append(color_bar)
+    gpu_sources[gpu].append(power_label)
+
+source_all = ColumnDataSource(data=scatter_data)
+source_full = ColumnDataSource(data=scatter_data)
+
+scatter_renderer = p.scatter(
+    x="x", y="y", source=source_all,
+    size=12, color='black', marker='circle', visible=False
+)
+
+power_renderer = p.patches(
+    xs='xs',
+    ys='ys',
+    source=source_all,
+    fill_color='color',
+    fill_alpha=0.7,
+    line_color=None,
+    level='underlay',
+    visible=False
+)
+
+hover_tool = HoverTool(
+    tooltips=tooltips,
+    renderers=[scatter_renderer],
+)
+p.add_tools(hover_tool)
 
 # Create CheckboxGroups for Operation Types and Data Types with no active selections
 op_checkboxes = RadioGroup(labels=[op for op in op_types], active=0)
@@ -331,11 +425,12 @@ callback_code = """
         p.change.emit();
         scatter_renderer.visible = true;
         power_renderer.visible = true;
+        console.log(source_all.data);
 
         for (const [gpu, renderers] of Object.entries(gpu_sources)) {
             const gpu_visible = selected_gpu === null || selected_gpu === gpu;
             for (const renderer of renderers) {
-                if (renderer.name === 'roofline') {
+                if (renderer.name === 'roofline' || renderer.name === 'power') {
                     renderer.visible = gpu_visible;
                 }
             }
@@ -357,9 +452,21 @@ gpu_checkboxes.js_on_change('active', callback)
 widgets = column(op_checkboxes, data_checkboxes, gpu_checkboxes)
 
 # Create a horizontal layout with the plot and widgets
-print(type(p))
-print(type(widgets))
-layout = row(p, widgets)
+# print(type(p))
+# print(type(widgets))
+# top_spacer = Spacer(height=20)  # adjust height as needed
+
+# right_column = column(
+#     top_spacer,
+#     column(op_checkboxes, data_checkboxes, gpu_checkboxes, spacing=10),
+#     p.toolbar
+# )
+top_spacer = Spacer(height=20)
+left_spacer = Spacer(width=20)
+
+content_row = row(p, widgets, p.toolbar)
+
+layout = column(top_spacer, row(left_spacer, content_row))
 
 
 # Add the layout to the current document
