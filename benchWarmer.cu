@@ -15,7 +15,6 @@
 #include <hip/hip_ext.h>
 #include <hip/hip_fp16.h>  // for __half
 #include <hiprand/hiprand_kernel.h>
-#include <rocSTAR.h>
 
 #define gpu(symbol) hip ## symbol
 #define rand(symbol) hiprand ## symbol
@@ -28,26 +27,19 @@
 #include <math.h>
 #include <vector>
 #include <getopt.h>
-#include <unordered_map>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
-#include <fstream>
-// #include <iostream>
 #include <assert.h>
 
 // Number of computes must be set at compile time
 #ifndef nOps
+#define nOps 1000
 #endif
-
-#ifndef EXP
-#endif
-
-std::string GPU;
 
 #define DEFAULT_WORKGROUP_SIZE 256
 #define DEFAULT_WORKGROUPS 16384
-
+#define DEFAULT_NUM_EXPERIMENTS 10
 #define DEFAULT_DATASET_SIZE 1024 * 1024 * 1024
 
 // function classes that we want to measure
@@ -115,6 +107,7 @@ struct RotateRight {
   }
 };
 
+
 static inline
 void initTimeEvents(gpu(Event_t) &start, gpu(Event_t) &stop)
 {
@@ -162,7 +155,6 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
 	a = &buf[gid];
@@ -177,8 +169,32 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			// Two different write locations to force the compiler to complete every operation
-			x = func(a[offset], x, y);
+			a[offset] = func(a[offset], x, y);
+		}
+	}
+  a[0] = x;
+}
+
+template<typename T, int n>
+__global__ void rsqrt_kernel(T *buf, uint32_t nSize)
+{
+	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
+	const uint32_t nThreads  = gridDim.x * blockDim.x;
+
+	T *a;
+	a = &buf[gid];
+	T x = a[0];
+	T y = a[1];
+	// Func func;
+
+	// Unroll to prevent the compiler from optimizing out the work
+	#pragma unroll 1
+	for(uint32_t offset=0; offset < nSize; offset += nThreads)
+	{
+		#pragma unroll
+		for(int j=0; j<n; j++)
+		{
+			a[offset] = rsqrtf(a[offset]);
 		}
 	}
   a[0] = x;
@@ -191,7 +207,6 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
 	a = &buf[gid];
@@ -219,7 +234,6 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	float2 *a;
 	a = &buf[gid];
@@ -239,6 +253,7 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 	}
 	a[0] = x;
 }
+
 
 // Kernel to convert the datatype of the items in the buffer
 template <class T_in, class T_out>
@@ -267,84 +282,48 @@ __global__ void initializeRandom(T *buffer, int nSize, unsigned long long seed) 
 }
 
 template<class T, class Func>
-static void bench_func(bool rocstar, bool record) {
-	// print value of Func and T
-	std::string s = typeid(Func).name();
-	std::string typeName = typeid(T).name();
-
-	printf("Func name\n");
-	printf("%s\n", typeid(Func).name());
-	printf("T name\n");
-	printf("%s\n", typeid(T).name());
-
-	float AI_HBM_ADD[8] = {0};
-	float AI_HBM_MUL[8] = {0};
-	float AI_HBM_MULADD[8] = {0};
-	float AI_HBM_DIV[8] = {0};
-	float AI_HBM_RSQ[8] = {0};
-
-  std::unordered_map<std::string, int> indexMap = {
-    {"h", 0},  // INT_8
-    {"t", 1},  // INT_16
-    {"j", 2},  // INT_32
-    {"m", 3},  // INT_64
-    {"6__half", 4},  // FP_16
-    {"f", 5},  // FP_32
-    {"d", 6}   // FP_64
-  };
-
-	std::unordered_map<int, std::string> opMap = {
-    {0, "INT8"},  // INT_8
-		{1, "INT16"},  // INT_16
-		{2, "INT32"},  // INT_32
-		{3, "INT64"},  // INT_64
-		{4, "FP16"},  // FP_8
-		{5, "FP32"},  // FP_16
-		{6, "FP64"},  // FP_32
-  };
-
-//   void *memBlock;
+static void bench_func(void) {
+  
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
-  int numExperiments = EXP;
+  int numExperiments = DEFAULT_NUM_EXPERIMENTS;
 
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T);  // total number of ints/floats
   uint64_t totalFlops = (uint64_t)nSize  * (uint64_t)nOps;
 
-  
   // Map to get common names of datatypes
-	std::unordered_map<std::string, std::string> typeNameLookup = {
-		{typeid(uint32_t).name(), "int32"},
-		{typeid(uint64_t).name(), "int64"},
-		{typeid(float).name(), "fp32"},
-		{typeid(double).name(), "fp64"},
-		{typeid(__half).name(), "fp16"},
-		{typeid(uint16_t).name(), "int16"},
-		{typeid(uint8_t).name(), "int8"}
-	};
-	std::string datatype = typeNameLookup.find(typeid(T).name())->second;
+  std::unordered_map<std::string, std::string> typeNameLookup = {
+      {typeid(uint32_t).name(), "int32"},
+      {typeid(uint64_t).name(), "int64"},
+      {typeid(float).name(), "fp32"},
+      {typeid(double).name(), "fp64"},
+      {typeid(__half).name(), "fp16"},
+      {typeid(uint16_t).name(), "int16"},
+      {typeid(uint8_t).name(), "int8"}
+  };
+  std::string datatype = typeNameLookup.find(typeid(T).name())->second;
 
-	// op = the name of the operation (after some processing)
+  // op = the name of the operation (after some processing)
 	std::string op = typeid(Func).name();
-	// Remove all numbers (digits)
-	op.erase(std::remove_if(op.begin(), op.end(), ::isdigit), op.end());
+  // Remove all numbers (digits)
+  op.erase(std::remove_if(op.begin(), op.end(), ::isdigit), op.end());
 
-	// Find the first occurrence of 'I' and truncate the string at that point
-	size_t pos = op.find('I');
-	if (pos != std::string::npos) { 
-		op = op.substr(0, pos);  // Truncate the string at 'I'
-	}
-
+  // Find the first occurrence of 'I' and truncate the string at that point
+  size_t pos = op.find('I');
+  if (pos != std::string::npos) {
+      op = op.substr(0, pos);  // Truncate the string at 'I'
+  }
 	// Double flop count for MulAdd tests since MulAdd involves two operations, multiply and add
-	// std::string s = typeid(Func).name();
-	if(op == "MulAdd") {
-		totalFlops *= 2;
+	
+  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
+
+    if(op == "MulAdd") {
+	 totalFlops *= 2;
 	}
 	if(op == "Rsqrt") {
 		totalFlops *= 2;
 	}
-  uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   T *memBlock;
   assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
@@ -358,11 +337,12 @@ static void bench_func(bool rocstar, bool record) {
 
   // Explicitly instantiate the template for the kernel
   initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
+  
 	
 
   // WARMUP KERNEL
   // packed_throughput_kernel: FP32 Add, Mul, MulAdd
-  // throughput_kernel_unrolled: Rsqrt, All Integer Add, Mul
+  // throughput_kernel_unrolled: All Integer Add, Mul
   // throughput_kernel: All other tests
   if (datatype == "fp32" && (op == "MulAdd")) {
     // FP32 MulAdd
@@ -376,9 +356,11 @@ static void bench_func(bool rocstar, bool record) {
   } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
     // Integer Add, Mul
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+	totalBytes *= 2;
   } else {
     // Every other test
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+	totalBytes *= 2;
   }
   gpu(DeviceSynchronize());
 
@@ -391,14 +373,6 @@ static void bench_func(bool rocstar, bool record) {
   float *durations = (float *)calloc(numExperiments, sizeof(float));
 
 	// Run experiments
-  #if __HIPCC__
-	if (rocstar == true) {
-		rocStarInit();
-		char *kernelName = (char*)"throughputKernel";
-		rocStarStart(kernelName);
-	}
-  #endif
-
   for (int n=0; n<numExperiments; n++)
   {
     // Launch kernel to initialize the buffer in parallel
@@ -438,118 +412,16 @@ static void bench_func(bool rocstar, bool record) {
     throughputs[n] = (float) totalFlops / eventMs / 1e6;  // Unit: GFLOPs/sec
     durations[n] = eventMs;
   }
-  #if __HIPCC__
-	if (rocstar == true) {
-		rocStarStop();
-		rocStarFinalize();
-	}
-  #endif
 
+  // Calculate summary statistics
   float meanThroughput, stdevThroughput, confidenceThroughput;
   float meanDuration, stdevDuration, confidenceDuration;
-  // Calculate summary statistics
+
   stats(throughputs, numExperiments, &meanThroughput, &stdevThroughput, &confidenceThroughput);
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
-  std::string target_col = " ";
-	float *AI_HBM = nullptr;
-  if (s.find("MulAdd") != std::string::npos) {
-	// printf("Found MulAdd in Func name!");
-	AI_HBM = AI_HBM_MULADD;
-	target_col = "AI_HBM_MULADD";
-  } else if (s.find("Mul") != std::string::npos) {
-    AI_HBM = AI_HBM_MUL;
-	target_col = "AI_HBM_MUL";
-  } else if (s.find("Add") != std::string::npos) {
-	AI_HBM = AI_HBM_ADD;
-	target_col = "AI_HBM_ADD";
-  } else if (s.find("Div") != std::string::npos) {
-    AI_HBM = AI_HBM_DIV;
-	target_col = "AI_HBM_DIV";
-  } else if (s.find("Rsqrt") != std::string::npos) {
-    AI_HBM = AI_HBM_RSQ;
-	target_col = "AI_HBM_RSQ";
-  }
-
-	// std::string typeName = typeid(T).name();
-	float AI = (float)totalFlops / (float)totalBytes;
-  if (AI_HBM != nullptr && indexMap.find(typeName) != indexMap.end()) {
-	// printf("Assigning value to array!");
-    AI_HBM[indexMap[typeName]] = AI;
-  }
-  std::string data_type = opMap[indexMap[typeName]];
-  target_col = target_col + '_' + data_type;
-	
-	// if (opTypeMap.find(opType) != opTypeMap.end()) {
-  //   AI_HBM_ADD[opTypeMap[opType]] = (float)totalFlops / (float)totalBytes;
-  // }
 
 	// Print output
-  printf("workgroupSize:%d, workgroups:%d, nThreads: %lu, nSize: %d, experiments: %d\n",
-      workgroupSize, numWorkgroups, nThreads, nSize, numExperiments);
-  printf("    Total FLOPS=%lu, total bytes accessed=%lu, AI=%f, mean duration=%.3f ms\n\n",
-      totalFlops, totalBytes, AI, meanDuration);
-  printf("    Mean throughput=%f GFLOPs/sec, stdev=%.3f GFLOPs/s, 95%% Confidence Interval: [%.3f, %.3f]\n\n",
-      meanThroughput, stdevThroughput, meanThroughput - confidenceThroughput, meanThroughput + confidenceThroughput);
-	// std::cout << GPU;
-	if (record == true) {
-		std::string filename = "pubbench_results_" + GPU + ".csv";
-		std::ifstream infile(filename);
-		bool fileIsEmpty = infile.peek() == std::ifstream::traits_type::eof();
-		infile.close();
-
-		std::ofstream csvFile;
-		csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
-		if (csvFile.is_open()) {
-			if (fileIsEmpty) {
-				csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_MUL_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_MULADD_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_DIV_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_RSQ_" << opMap[i] << ",";
-				}
-				csvFile << "AverageSec,PERF,STDDEV,CI\n";
-			}
-			csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
-							<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_ADD[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_MUL[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_MULADD[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_DIV[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_RSQ[i] << ",";
-			}
-			csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
-			csvFile.close();
-			printf("Results written to %s\n", filename.c_str());
-		} else {
-			printf("Error opening %s\n", filename.c_str());
-		}
-	}
-	std::ofstream outFile("/home/khoffmey/work/PubBench/meanDuration.txt", std::ios::out);
-	if (outFile.is_open()) {
-		outFile << meanDuration << std::endl;
-		outFile.close();
-	}
-	
-	  
+  printf("%s, %s, %f, %.3f, %.3f, %lu, %lu, %.3f, %d, %lu, %d, %d\n", datatype.c_str(), op.c_str(), meanThroughput, stdevThroughput, meanDuration, totalFlops, totalBytes, ((float)totalFlops/(float)totalBytes), numWorkgroups, nThreads, nSize, numExperiments);
 
   // Clean up time
   gpu(Free(memBlock));
@@ -560,7 +432,7 @@ static void bench_convert(void) {
   
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
-  int numExperiments = EXP;
+  int numExperiments = DEFAULT_NUM_EXPERIMENTS;
 
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T_in);  // total number of ints/floats
@@ -640,30 +512,32 @@ static void bench_convert(void) {
   gpu(Free(d_output));
 }
 
+// Run relevent tests for integer types
 template<class T>
-static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool shift, bool rotate, bool rocstar, bool record, bool convert) {
+static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool shift, bool rotate, bool convert) {
+
 	if(add) {
-		bench_func<T,Add<T>>(rocstar, record);
+		bench_func<T,Add<T>>();
 	}
 	if(mul) {
-		bench_func<T,Mul<T>>(rocstar, record);
+		bench_func<T,Mul<T>>();
 	}
 	if(muladd) {
-		bench_func<T,MulAdd<T>>(rocstar, record);
+		bench_func<T,MulAdd<T>>();
 	}
 	if(div) {
-		bench_func<T,Div<T>>(rocstar, record);
+		bench_func<T,Div<T>>();
 	}
 	if(rsq) {
-		bench_func<T,Rsqrt<T>>(rocstar, record);
+		bench_func<T,Rsqrt<T>>();
 	}
 	if(shift) {
-		bench_func<T,ShiftLeft<T>>(rocstar, record);
-		bench_func<T,ShiftRight<T>>(rocstar, record);
+		bench_func<T,ShiftLeft<T>>();
+		bench_func<T,ShiftRight<T>>();
 	}
 	if(rotate) {
-		bench_func<T,RotateLeft<T>>(rocstar, record);
-		bench_func<T,RotateRight<T>>(rocstar, record);
+		bench_func<T,RotateLeft<T>>();
+		bench_func<T,RotateRight<T>>();
 	}
   if(convert) {
     bench_convert<T,uint8_t>();
@@ -679,21 +553,21 @@ static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool 
 
 // Run relevent tests for floating point types
 template<class T>
-static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool rocstar, bool record, bool convert) {
+static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool convert) {
 	if(add) {
-		bench_func<T,Add<T>>(rocstar, record);
+		bench_func<T,Add<T>>();
 	}
 	if(mul) {
-		bench_func<T,Mul<T>>(rocstar, record);
+		bench_func<T,Mul<T>>();
 	}
 	if(muladd) {
-		bench_func<T,MulAdd<T>>(rocstar, record);
+		bench_func<T,MulAdd<T>>();
 	}
 	if(div) {
-		bench_func<T,Div<T>>(rocstar, record);
+		bench_func<T,Div<T>>();
 	}
 	if(rsq) {
-		bench_func<T,Rsqrt<T>>(rocstar, record);
+		bench_func<T,Rsqrt<T>>();
 	}
   if(convert) {
     bench_convert<T,uint8_t>();
@@ -712,7 +586,6 @@ int main(int argc, char **argv)
 	//CLI parsing
 	bool i8 = false, i16 = false, i32 = false, i64 = false, fp16 = false, fp32 = false, fp64 = false;
 	bool add = false, mul = false, muladd = false, div = false, rsq = false, shift = false, rotate = false, convert = false;
-	bool rocstar = false, record = false;
 
 	int c, option_index = 0;
 	static struct option long_options[] = {
@@ -735,13 +608,9 @@ int main(int argc, char **argv)
 					{"shift",   no_argument,   0,  'o' },
 					{"rotate",  no_argument,   0,  'p' },
 					{"convert", no_argument,   0,  'q' },
-					{"majority", no_argument, 0, 'r'},
-					{"rocstar",no_argument, 0},
-					{"record",no_argument, 0},
-					{"gpu",     required_argument, 0,  'u' },
 					{0,         0,             0,  0   }
 			};
-	while ((c = getopt_long_only(argc, argv, "agbcdefijklmnopqu:", long_options, &option_index)) != -1){
+	while ((c = getopt_long_only(argc, argv, "agbcdefijklmnopq", long_options, &option_index)) != -1){
 		if (c == -1)
 			break;
 
@@ -750,87 +619,57 @@ int main(int argc, char **argv)
 			case 'a':
 				i8=1, i16=1, i32=1, i64=1;
 				fp16=1, fp32=1, fp64=1;
-				printf("Selected all tests\n");
 				break;
 			case 'g':
 				i8 = 1;
-				printf("Selected int8 test\n");
 				break;
 			case 'b':
 				i16 = 1;
-				printf("Selected int16 test\n");
 				break;
 			case 'c':
 				i32 = 1;
-				printf("Selected int32 test\n");
 				break;
 			case 'd':
 				i64 = 1;
-				printf("Selected int64 test\n");
 				break;
 			case 'v':
 				fp16 = 1;
-				printf("Selected FP16 test\n");
 				break;
 			case 'e':
 				fp32 = 1;
-				printf("Selected FP32 test\n");
 				break;
 			case 'f':
 				fp64 = 1;
-				printf("Selected FP64 test\n");
 				break;
 			case 'i':
 				i8=1, i16=1, i32=1, i64=1;
-				printf("Selected all int tests\n");
 				break;
 			case 'j':
 				fp16=1, fp32=1, fp64=1;
-				printf("Selected all FP tests\n");
 				break;
 			case 'k':
 				add = 1;
-				printf("Selected Add test\n");
 				break;
 			case 'l':
 				mul = 1;
-				printf("Selected Multiply test\n");
 				break;
 			case 't':
 				div = 1;
-				printf("Selected Division test\n");
 				break;
 			case 'm':
 				muladd = 1;
-				printf("Selected MulAdd test\n");
 				break;
 			case 'n':
 				rsq = 1;
-				printf("Selected Rsqrt test\n");
 				break;
 			case 'o':
 				shift = 1;
-				printf("Selected Shift test\n");
 				break;
 			case 'p':
 				rotate = 1;
-				printf("Selected Rotate test\n");
 				break;
 			case 'q':
 				convert = 1;
-				break;
-			case 'u':
-				printf("Selected GPU: %s\n", optarg);
-				GPU = optarg;
-				break;
-			case 0:
-				if (strcmp(long_options[option_index].name, "rocstar") == 0) {
-					rocstar = 1;
-					printf("Selected rocstar mode\n");
-				} else if (strcmp(long_options[option_index].name, "record") == 0) {
-					record = 1;
-					printf("Selected record mode\n");
-				}
 				break;
 			case 'h':
 			default:
@@ -864,34 +703,34 @@ int main(int argc, char **argv)
 				exit(1);
 		}
 	}
-// If no operation/datatype is selected, do all of them
-if (! (add || mul || muladd || div || rsq || shift || rotate || convert)) {
-	add=1, mul=1, muladd=1, div=1, rsq=1, shift=1, rotate=1, convert=1;
-}
-if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
-	i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
-}
-// Print header for CSV file
-// printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
-if (i8) {
-bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
-}
-if (i16) {
-	bench_int<uint16_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
-}
-if (i32) {
-	bench_int<uint32_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
-}
-if (i64) {
-	bench_int<uint64_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
-}
-if (fp16) {
-	bench_fp<__half>(add, mul, muladd, div, rsq, rocstar, record, convert);
-}
-if (fp32) {
-	bench_fp<float>(add, mul, muladd, div, rsq, rocstar, record, convert);
-}
-if (fp64) {
-	bench_fp<double>(add, mul, muladd, div, rsq, rocstar, record, convert);
-}
+	// If no operation/datatype is selected, do all of them
+	if (! (add || mul || muladd || div || rsq || shift || rotate || convert)) {
+		add=1, mul=1, muladd=1, div=1, rsq=1, shift=1, rotate=1, convert=1;
+	}
+	if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
+		i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
+	}
+  // Print header for CSV file
+  printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
+  if (i8) {
+    bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, convert);
+  }
+  if (i16) {
+		bench_int<uint16_t>(add, mul, muladd, div, rsq, shift, rotate, convert);
+  }
+  if (i32) {
+		bench_int<uint32_t>(add, mul, muladd, div, rsq, shift, rotate, convert);
+  }
+  if (i64) {
+		bench_int<uint64_t>(add, mul, muladd, div, rsq, shift, rotate, convert);
+  }
+  if (fp16) {
+		bench_fp<__half>(add, mul, muladd, div, rsq, convert);
+  }
+  if (fp32) {
+		bench_fp<float>(add, mul, muladd, div, rsq, convert);
+  }
+  if (fp64) {
+		bench_fp<double>(add, mul, muladd, div, rsq, convert);
+  }
 }
