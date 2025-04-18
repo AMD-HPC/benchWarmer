@@ -303,7 +303,7 @@ static void bench_func(bool rocstar, bool record) {
 		{6, "FP64"},  // FP_32
   };
 
-  void *memBlock;
+//   void *memBlock;
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
   int numExperiments = EXP;
@@ -341,9 +341,9 @@ static void bench_func(bool rocstar, bool record) {
 	if(op == "MulAdd") {
 		totalFlops *= 2;
 	}
-	// if(s.find("Rsqrt") != std::string::npos) {  // if Func has MulAdd in its name
-	// 	totalFlops *= 1.5;
-	// }
+	if(op == "Rsqrt") {
+		totalFlops *= 2;
+	}
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   T *memBlock;
@@ -560,7 +560,7 @@ static void bench_convert(void) {
   
   int numWorkgroups = DEFAULT_WORKGROUPS;
   int workgroupSize = DEFAULT_WORKGROUP_SIZE;
-  int numExperiments = DEFAULT_NUM_EXPERIMENTS;
+  int numExperiments = EXP;
 
   uint64_t nThreads = (uint64_t)numWorkgroups * (uint64_t)workgroupSize;
   int nSize = DEFAULT_DATASET_SIZE/sizeof(T_in);  // total number of ints/floats
@@ -641,29 +641,29 @@ static void bench_convert(void) {
 }
 
 template<class T>
-static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool shift, bool rotate, bool convert) {
+static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool shift, bool rotate, bool rocstar, bool record, bool convert) {
 	if(add) {
-		bench_func<T,Add<T>>();
+		bench_func<T,Add<T>>(rocstar, record);
 	}
 	if(mul) {
-		bench_func<T,Mul<T>>();
+		bench_func<T,Mul<T>>(rocstar, record);
 	}
 	if(muladd) {
-		bench_func<T,MulAdd<T>>();
+		bench_func<T,MulAdd<T>>(rocstar, record);
 	}
 	if(div) {
-		bench_func<T,Div<T>>();
+		bench_func<T,Div<T>>(rocstar, record);
 	}
 	if(rsq) {
-		bench_func<T,Rsqrt<T>>();
+		bench_func<T,Rsqrt<T>>(rocstar, record);
 	}
 	if(shift) {
-		bench_func<T,ShiftLeft<T>>();
-		bench_func<T,ShiftRight<T>>();
+		bench_func<T,ShiftLeft<T>>(rocstar, record);
+		bench_func<T,ShiftRight<T>>(rocstar, record);
 	}
 	if(rotate) {
-		bench_func<T,RotateLeft<T>>();
-		bench_func<T,RotateRight<T>>();
+		bench_func<T,RotateLeft<T>>(rocstar, record);
+		bench_func<T,RotateRight<T>>(rocstar, record);
 	}
   if(convert) {
     bench_convert<T,uint8_t>();
@@ -679,21 +679,21 @@ static void bench_int(bool add, bool mul, bool muladd, bool div, bool rsq, bool 
 
 // Run relevent tests for floating point types
 template<class T>
-static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool convert) {
+static void bench_fp(bool add, bool mul, bool muladd, bool div, bool rsq, bool rocstar, bool record, bool convert) {
 	if(add) {
-		bench_func<T,Add<T>>();
+		bench_func<T,Add<T>>(rocstar, record);
 	}
 	if(mul) {
-		bench_func<T,Mul<T>>();
+		bench_func<T,Mul<T>>(rocstar, record);
 	}
 	if(muladd) {
-		bench_func<T,MulAdd<T>>();
+		bench_func<T,MulAdd<T>>(rocstar, record);
 	}
 	if(div) {
-		bench_func<T,Div<T>>();
+		bench_func<T,Div<T>>(rocstar, record);
 	}
 	if(rsq) {
-		bench_func<T,Rsqrt<T>>();
+		bench_func<T,Rsqrt<T>>(rocstar, record);
 	}
   if(convert) {
     bench_convert<T,uint8_t>();
@@ -735,6 +735,7 @@ int main(int argc, char **argv)
 					{"shift",   no_argument,   0,  'o' },
 					{"rotate",  no_argument,   0,  'p' },
 					{"convert", no_argument,   0,  'q' },
+					{"majority", no_argument, 0, 'r'},
 					{"rocstar",no_argument, 0},
 					{"record",no_argument, 0},
 					{"gpu",     required_argument, 0,  'u' },
@@ -822,10 +823,6 @@ int main(int argc, char **argv)
 				printf("Selected GPU: %s\n", optarg);
 				GPU = optarg;
 				break;
-			case 'r':
-				majority = 1;
-				printf("Selected Majority test\n");
-				break;
 			case 0:
 				if (strcmp(long_options[option_index].name, "rocstar") == 0) {
 					rocstar = 1;
@@ -875,26 +872,26 @@ if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
 	i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
 }
 // Print header for CSV file
-printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
+// printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
 if (i8) {
-bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
 }
 if (i16) {
-	bench_int<uint16_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+	bench_int<uint16_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
 }
 if (i32) {
-	bench_int<uint32_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+	bench_int<uint32_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
 }
 if (i64) {
-	bench_int<uint64_t>(add, mul, muladd, div, rsq, shift, rotate, convert, rocstar, record);
+	bench_int<uint64_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
 }
 if (fp16) {
-	bench_fp<__half>(add, mul, muladd, div, rsq, convert, rocstar, record);
+	bench_fp<__half>(add, mul, muladd, div, rsq, rocstar, record, convert);
 }
 if (fp32) {
-	bench_fp<float>(add, mul, muladd, div, rsq, convert, rocstar, record);
+	bench_fp<float>(add, mul, muladd, div, rsq, rocstar, record, convert);
 }
 if (fp64) {
-	bench_fp<double>(add, mul, muladd, div, rsq, convert, rocstar, record);
+	bench_fp<double>(add, mul, muladd, div, rsq, rocstar, record, convert);
 }
 }
