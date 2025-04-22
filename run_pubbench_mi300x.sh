@@ -7,7 +7,7 @@
 #SBATCH --error=./slurm_output/mi300x.err
 
 # SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# cd "$SCRIPT_DIR"
+# cd "$SCRIPT_DIR" 
 # echo "$SCRIPT_DIR"
 module load rocm
 

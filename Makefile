@@ -8,7 +8,7 @@ nvidia: nv
 nOps ?= 1000
 
 %-nv_$(GPU)_$(nOps)_$(EXP): %.cu
-		nvcc $^ -o $@ -O3 -D nOps=$(nOps)
+		nvcc $^ -o $@ -O3 -D nOps=$(nOps) -D EXP=$(EXP)
 %-amd_$(GPU)_$(nOps)_$(EXP): %.cu
 		hipcc -std=c++11 $^ -o $@ -O3 -D nOps=$(nOps) -D EXP=$(EXP) -I "$(ROCSTAR_ROOT)/include" -L "$(ROCSTAR_ROOT)/lib" -lrocSTAR
 		
