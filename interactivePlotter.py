@@ -41,6 +41,14 @@ if args.results:
     df = pd.read_csv(args.results)
     df['Power'] = df['Power'].fillna(0)
     df['PERF'] = df['PERF'] / 1000
+    # Consolidate rows for GPU 'MI250X_two_gcd'
+    if 'MI250X_two_gcd' in df['GPU'].values:
+        ai_cols = [col for col in df.columns if 'AI_' in col]
+        df_grouped = df[df['GPU'] == 'MI250X_two_gcd'].groupby(['Iterations'] + ai_cols, as_index=False).agg(
+            {col: 'first' if col != 'PERF' else 'sum' for col in df.columns if col not in ['Iterations'] + ai_cols}
+        )
+        df = pd.concat([df[df['GPU'] != 'MI250X_two_gcd'], df_grouped], ignore_index=True)
+    df['GPU'] = df['GPU'].replace({'MI250X_two_gcd': 'MI250X (2 GCDs)'})
 else:
     print('No runtimes file provided.')
 
@@ -108,11 +116,15 @@ if args.results:
                     #     perf_value *= 1.5
                     #     ai_value *= 0.75
                     power_value = row_data['Power']
-                    kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
+                    if ai_value in kernels[mem + '_' + op + '_' + data][gpu]:
+                        existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
+                        kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (existing_perf + perf_value, existing_power)
+                    else:
+                        kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
 print('Plotting rooflines...')
 
-AI = np.logspace(-1, 6, 10000)
+AI = np.logspace(-2, 6, 10000)
 
 # Define colors and markers
 colors = ['blue', 'green', 'red', 'purple', 'orange', 'brown', 'pink', 'gray', 'cyan', 'magenta']
@@ -124,14 +136,14 @@ op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
 tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
-p = figure(x_axis_type='log', y_range=(0.1, 1e3), x_range=(0.1, 1e5), y_axis_type='log', title='Empirical Rooflines',
+p = figure(x_axis_type='log', y_range=(0.05, 1e3), x_range=(0.05, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
 p.title.text_font_size = '14pt'
-p.xaxis.axis_label_text_font_size = '12pt'
-p.yaxis.axis_label_text_font_size = '12pt'
-p.xaxis.major_label_text_font_size = '10pt'
-p.yaxis.major_label_text_font_size = '10pt'
+p.xaxis.axis_label_text_font_size = '16pt'
+p.yaxis.axis_label_text_font_size = '16pt'
+p.xaxis.major_label_text_font_size = '14pt'
+p.yaxis.major_label_text_font_size = '14pt'
 
 p.toolbar_location = None
 
@@ -222,9 +234,9 @@ for key, gpu_data in kernels.items():
             slope, peak = emp_roofs[gpu]
 
             if ai < peak / emp_roofs[gpu][0]:
-                y_patch = [0.1, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.1]
+                y_patch = [0.05, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.05]
             else:
-                y_patch = [0.1, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.1]
+                y_patch = [0.05, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.05]
             
             knee = peak / slope
 
@@ -245,8 +257,8 @@ for key, gpu_data in kernels.items():
             
             x_patch = [x_left, x_left, x_right, x_right]
 
-            scatter_data["x"].append(ai)
-            scatter_data["y"].append(perf)
+            scatter_data["x"].append(float(f"{ai:.10f}"))
+            scatter_data["y"].append(float(f"{perf:.10f}"))
             scatter_data["op"].append(op)
             scatter_data["data_type"].append(data_type)
             scatter_data["gpu"].append(gpu)
@@ -262,8 +274,8 @@ for key, gpu_data in kernels.items():
 for gpu, (slope, peak) in emp_roofs.items():
     min_power = df[df['GPU'] == gpu]['Power'].min()
     max_power = df[df['GPU'] == gpu]['Power'].max()
-    min_power = math.floor(min_power / 50) * 50
-    max_power = math.ceil(max_power / 50) * 50
+    min_power = min_power
+    max_power = max_power
     norm = plt.Normalize(
         min_power,
         max_power,
@@ -387,13 +399,24 @@ data_checkboxes = RadioGroup(
 gpus = df['GPU'].unique()
 gpu_checkboxes = RadioGroup(labels=[gpu for gpu in gpus], active=0)
 
+bigger_font_css = """
+:host {
+    /* everything inside this RadioGroup inherits this size */
+    font-size: 16px;
+    font-family: Arial, sans-serif;
+}
+"""
+
+for rg in (op_checkboxes, data_checkboxes, gpu_checkboxes):
+    rg.stylesheets.append(bigger_font_css)
+
 # Define the JavaScript Callback for RadioGroup Interactions
 callback_code = """
     // Function to update visibility based on active radiogroups
     function update_visibility() {
         const selected_op = op_checkboxes.active !== null ? op_checkboxes.labels[op_checkboxes.active].split(' ')[0] : null;
         const selected_data = data_checkboxes.active !== null ? data_checkboxes.labels[data_checkboxes.active] : null;
-        const selected_gpu = gpu_checkboxes.active !== null ? gpu_checkboxes.labels[gpu_checkboxes.active].split(' ')[0] : null;
+        const selected_gpu = gpu_checkboxes.active !== null ? gpu_checkboxes.labels[gpu_checkboxes.active] : null;
 
         const full_data = source_full.data;
         const filtered = {
@@ -451,47 +474,29 @@ gpu_checkboxes.js_on_change('active', callback)
 # Layout and show
 widgets = column(op_checkboxes, data_checkboxes, gpu_checkboxes)
 
-# Create a horizontal layout with the plot and widgets
-# print(type(p))
-# print(type(widgets))
-# top_spacer = Spacer(height=20)  # adjust height as needed
+centered_plot = row(
+    Spacer(width=0, sizing_mode="stretch_width"),
+    p,
+    widgets,
+    p.toolbar,
+    Spacer(width=0, sizing_mode="stretch_width"),
+    sizing_mode="stretch_width"
+)
 
-# right_column = column(
-#     top_spacer,
-#     column(op_checkboxes, data_checkboxes, gpu_checkboxes, spacing=10),
-#     p.toolbar
-# )
-top_spacer = Spacer(height=20)
-left_spacer = Spacer(width=20)
+# Final layout
+layout = column(
+    Spacer(height=70),
+    centered_plot,
+    Spacer(height=70),
+    sizing_mode="stretch_width"
+)
 
-content_row = row(p, widgets, p.toolbar)
+# 3 – Write a self-contained interactive HTML file
+output_file(f"{filename}.html")   # sets the output file name
+show(layout)  
 
-layout = column(top_spacer, row(left_spacer, content_row))
-
-
-# Add the layout to the current document
-curdoc().add_root(layout)
-curdoc().template = """
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="utf-8">
-    <title>Roofline Plot</title>
-    <style>
-        .custom-checkbox .bk-input-group label {
-            color: inherit;
-        }
-    </style>
-</head>
-<body>
-    {% block contents %}
-    {{ super() }}
-    {% endblock %}
-</body>
-</html>
-"""
-output_file(filename=f'{filename}.html')
-show(layout)
+# output_file(filename=f'{filename}.html')
+# show(layout)
 
 plt.savefig(filename, bbox_inches='tight')
 print(f'Plot saved as {filename}.png')
