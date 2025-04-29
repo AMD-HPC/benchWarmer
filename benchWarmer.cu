@@ -83,7 +83,7 @@ struct Div {
 template<class T>
 struct Rsqrt {
   __device__ T operator()(T x, T y, T z) {
-    return rsqrtf(y);
+    return rsqrtf(x);
   }
 };
 
@@ -158,7 +158,7 @@ void stats(float *samples, int entries, float *mean, float *stdev, float *confid
 }
 
 template<typename T, int n, class Func>
-__global__ void throughput_kernel(T *buf, uint32_t nSize)
+__global__ void rsqrt_kernel(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
@@ -179,6 +179,33 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		{
 			// Two different write locations to force the compiler to complete every operation
 			a[offset] = func(a[offset], x, y);
+		}
+	}
+  a[0] = x;
+}
+
+template<typename T, int n, class Func>
+__global__ void throughput_kernel(T *buf, uint32_t nSize)
+{
+	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
+	const uint32_t nThreads  = gridDim.x * blockDim.x;
+	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
+
+	T *a;
+	a = &buf[gid];
+	T x = a[0];
+	T y = a[1];
+	Func func;
+
+	// Unroll to prevent the compiler from optimizing out the work
+	#pragma unroll 1
+	for(uint32_t offset=0; offset < nSize; offset += nThreads)
+	{
+		#pragma unroll
+		for(int j=0; j<n; j++)
+		{
+			// Two different write locations to force the compiler to complete every operation
+			x = func(a[offset], x, y);
 		}
 	}
   a[0] = x;
@@ -341,9 +368,9 @@ static void bench_func(bool rocstar, bool record) {
 	if(op == "MulAdd") {
 		totalFlops *= 2;
 	}
-	// if(op == "Rsqrt") {
-	// 	totalFlops *= 2;
-	// }
+	if(op == "Rsqrt") {
+		totalFlops *= 2;
+	}
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
   T *memBlock;
@@ -377,9 +404,11 @@ static void bench_func(bool rocstar, bool record) {
     // Integer Add, Mul
 	totalBytes *= 2;
     throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
-  } else {
-    // Every other test
+} else if (op == "Rsqrt") {
 	totalBytes *= 2;
+	rsqrt_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+  }	else {
+    // Every other test
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
   gpu(DeviceSynchronize());
@@ -426,12 +455,19 @@ static void bench_func(bool rocstar, bool record) {
       packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
-      // Integer Add, Mul
+      // Integer Add, 
+	  printf("going throughput_kernel_unrolled!");
 			initTimeEvents(start, stop);
       throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
-    } else {
-      // Every other test
+	} else if (op == "Rsqrt") {
+		printf("going rsqrt_kernel!");
+		initTimeEvents(start, stop);
+		rsqrt_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
+		stopTimeEvents(eventMs, start, stop);
+	}	else {
+		// Every other test
+		printf("going through throughput_kernel!");
 			initTimeEvents(start, stop);
       throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
@@ -503,7 +539,7 @@ static void bench_func(bool rocstar, bool record) {
 		csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
 		if (csvFile.is_open()) {
 			if (fileIsEmpty) {
-				csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,";
+				csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,bandwidth,";
 				for (int i = 0; i < 7; ++i) {
 					csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
 				}
@@ -521,8 +557,9 @@ static void bench_func(bool rocstar, bool record) {
 				}
 				csvFile << "AverageSec,PERF,STDDEV,CI\n";
 			}
+			float bandwidth = (static_cast<float>(totalBytes) / 1000000000) / (meanDuration / 1000);
 			csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
-							<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << ",";
+							<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << "," << bandwidth << ",";
 			for (int i = 0; i < 7; ++i) {
 				csvFile << AI_HBM_ADD[i] << ",";
 			}
