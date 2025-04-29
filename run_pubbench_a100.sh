@@ -6,22 +6,15 @@
 #SBATCH --output=./slurm_output/a100.out
 #SBATCH --error=./slurm_output/a100.err
 
-# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# cd "$SCRIPT_DIR"
-# echo "$SCRIPT_DIR"
-cd "/home/khoffmey/work/PubBench"
 module load CUDA
 
 GPU="A100"
-# pwd
-# ls
 # rm pubbench_results_$GPU.csv
 # touch pubbench_results_$GPU.csv
 opTypes=("add" "mul" "muladd" "div" "rsqrt")
 dataTypes=("int8" "int16" "int32" "int64" "fp16" "fp32" "fp64")
 
 nOps=()
-# nOps=2
 for ((i=0; i<16; i++)); do
     nOp=$(echo "2^$i" | bc)
     nOps+=($nOp)
@@ -34,7 +27,7 @@ for nOp in "${nOps[@]}"; do
     make nv nOps=$nOp GPU=$GPU EXP=$EXP
     ./benchWarmer-nv_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
     AVG_TIME=$(cat meanDuration.txt)
-    EXP=$(echo "(3000 / $AVG_TIME + 0.5)/1" | bc)
+    EXP=$(echo "$AVG_TIME" | awk '{ x = int((3000 / $1) + 0.5); if (x > 10) print x; else print 10 }')
     echo "New exp: $EXP"
     make nv nOps=$nOp GPU=$GPU EXP=$EXP
     for opType in "${opTypes[@]}"; do
@@ -43,22 +36,15 @@ for nOp in "${nOps[@]}"; do
             # make clean
             echo "Running $opType and $dataType"
             NVIDIA_OUTPUT_FILE="./nvidia_metrics/$GPU/hw_metrics_${nOp}_${opType}_${dataType}.csv"
-            ./benchWarmer-nv_${GPU}_${nOp}_10 -u "$GPU" --"$opType" --"$dataType"
+            ./benchWarmer-nv_${GPU}_${nOp}_10 -u "$GPU" --"$opType" --"$dataType" --record
 
-            nvidia-smi --query-gpu=timestamp,power.draw,temperature.gpu,clocks.sm --format=csv -lms 10 > $NVIDIA_OUTPUT_FILE & PID=$!
+            nvidia-smi --query-gpu=timestamp,power.draw --format=csv \
+                -lms 10 > $NVIDIA_OUTPUT_FILE & PID=$!
         
-            timeout 3s ./benchWarmer-nv_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
+            timeout 3s ./benchWarmer-nv_${GPU}_${nOp}_${EXP} \
+                        -u "$GPU" --"$opType" --"$dataType"
             
             kill $PID
         done
     done
 done
-
-
-# cp /home/khoffmey/work/PubBench/pubbench_results.csv "/home/khoffmey/work/PubBench/pubbench_results_backup.csv"
-# mv /home/khoffmey/work/PubBench/pubbench_results_backup.csv "/home/khoffmey/work/gpu_power_frequency_study/kernels/results/pubbench_results.csv"
-
-# cd "/home/khoffmey/work/gpu_power_frequency_study"
-# source env/bin/activate
-
-# python3 rooflinePlotterPlotly.py -e "./kernels/results/pubbench_results.csv" -g "MI250X" -d "INT8 INT16 INT32 INT64 FP16 FP32 FP64" -o "ADD MULADD MUL DIV RSQ" -m "HBM" -c 1

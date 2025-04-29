@@ -5,8 +5,8 @@
 #SBATCH --time=48:00:00
 #SBATCH --gpus-per-node=2
 #SBATCH --ntasks=2
-#SBATCH --output=./slurm_output/mi250x.out
-#SBATCH --error=./slurm_output/mi250x.err
+#SBATCH --output=./slurm_output/mi250x_two_gcd.out
+#SBATCH --error=./slurm_output/mi250x_two_gcd.err
 
 # SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # cd "$SCRIPT_DIR"
@@ -15,6 +15,7 @@
 # pwd
 # ls
 # module load rocm/6.1.1
+module load rocm
 
 nOps=()
 # nOps=2
@@ -43,20 +44,28 @@ for nOp in "${nOps[@]}"; do
     # make clean
     EXP=10
     make amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
-    # ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
-    # AVG_TIME=$(cat meanDuration.txt)
-    # EXP=$(echo "(20000 / $AVG_TIME + 0.5)/1" | bc)
-    # echo "New exp: $EXP"
+./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --muladd --fp32
+    AVG_TIME=$(cat meanDuration.txt)
+    BASE_EXP=$(echo "$AVG_TIME" | awk '{ x = int((20000 / $1) + 0.5); if (x > 10) print x; else print 10 }')
+    make amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$BASE_EXP
+    echo "New exp: $BASE_EXP"
 
     for opType in "${opTypes[@]}"; do
         for dataType in "${dataTypes[@]}"; do
-            EXP=10
+            EXP=$BASE_EXP
+            if [[ "$dataType" == "int64" || "$opType" == "div" || "$opType" == "rsqrt" ]]; then
             # echo "nOps: ${nOp}, opType: ${opType}, dataType: ${dataType}"
-            ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
+                ./benchWarmer-amd_${GPU}_${nOp}_10 -u "$GPU" --"$opType" --"$dataType"
+                AVG_TIME=$(cat meanDuration.txt)
+                EXP=$(echo "$AVG_TIME" | awk '{ x = int((20000 / $1) + 0.5); if (x > 10) print x; else print 10 }')
+                make amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
+            fi
+            # echo "nOps: ${nOp}, opType: ${opType}, dataType: ${dataType}"
+            # ./benchWarmer-amd_${GPU}_${nOp}_${EXP} -u "$GPU" --"$opType" --"$dataType"
 
-            AVG_TIME=$(cat meanDuration.txt)
-            EXP=$(echo "scale=0; x = (20000 / $AVG_TIME + 0.5); if (x > 10) x else 10" | bc -l)
-            echo "New exp: $EXP"
+            # AVG_TIME=$(cat meanDuration.txt)
+            # EXP=$(echo "$AVG_TIME" | awk '{ x = int((20000 / $1) + 0.5); if (x > 10) print x; else print 10 }')
+            # echo "New exp: $EXP"
             # ((EXP=17/AVG_TIME))
             
             # if AI >
@@ -68,7 +77,7 @@ for nOp in "${nOps[@]}"; do
             # AGT_CMD="sudo $AGT_PATH -unilog=PM -unilogallgroups -i=0,1,2,3,4,5,6,7 -unilogperiod=50 -unilogoutput=${AGT_OUTPUT_FILE} &"
             # eval $AGT_CMD
             # echo "Starting AGT: $(date)"
-            make amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
+            # make amd nOps=$nOp GPU=$GPU ROCSTAR_ROOT=$ROCSTAR_ROOT EXP=$EXP
             srun -n 2 run_benchwarmer.sh -g "$GPU" -o "$opType" -d "$dataType" -n "$nOp" -e "$EXP"
 
         done
