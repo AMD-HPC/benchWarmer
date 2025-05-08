@@ -306,6 +306,7 @@ static void bench_func(void) {
 
   // Explicitly instantiate the template for the kernel
   initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
+  gpu(DeviceSynchronize());
   
 	
 
