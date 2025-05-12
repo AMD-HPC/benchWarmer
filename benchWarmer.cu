@@ -439,6 +439,7 @@ static void bench_convert(void) {
   
   // Warmup kernel
   convertKernel<T_in, T_out><<<numWorkgroups, workgroupSize>>>(d_input, d_output, nSize);
+  gpu(DeviceSynchronize());
 
 	// Timing data
   float eventMs;
