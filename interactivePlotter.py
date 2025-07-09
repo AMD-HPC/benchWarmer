@@ -52,8 +52,23 @@ if args.results:
 else:
     print('No runtimes file provided.')
 
-if args.emp:
-    roof_df = pd.read_csv(args.emp)
+peak_bw = {}
+gpus = ['MI250X', 'MI250X (2 GCDs)', 'MI300A', 'MI300X', 'A100', 'H100']
+for gpu in gpus:
+    if gpu not in ['A100', 'H100', 'MI250X (2 GCDs)']:
+        emp_df = pd.read_csv(f'./roofline_csvs/roofline_{gpu}.csv')
+        emp_df['HBMBw'] = emp_df['HBMBw'].astype(float)
+        peak_bw[gpu] = emp_df['HBMBw'].mean() / 1000
+    else:
+        peak_bw['H100'] = 4400 / 1000
+        peak_bw['A100'] = 1300 / 1000
+        peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
+
+
+
+
+# if args.emp:
+#     roof_df = pd.read_csv(args.emp)
 gpu_name = args.gpu
 data_types = args.datatypes.split()
 op_types = args.operations.split()
@@ -73,20 +88,20 @@ else:
     fig, ax1 = plt.subplots(1, 1, figsize=(24, 12))
 
 # Extract roofline data into dictionary for easier access
-print('Gathering empirical roofline data...')
-gpus = df['GPU'].unique()
-emp_roofs = {}
-# if args.emp:
-# for data in data_types:
-#     for mem in mem_types:
-slope = roof_df['HBMBw'].mean() / 1000
-peak = roof_df['MFMAF32Flops'].mean() / 1000
-# if 'pubbench' in args.results:
-#     if df['PERF'].max() > peak:
-#         peak = df['PERF'].max() / 1000
-for gpu in gpus:
-    emp_roofs[gpu] = (slope, peak)
-print('Data gathered.')
+# print('Gathering empirical roofline data...')
+# gpus = df['GPU'].unique()
+# emp_roofs = {}
+# # if args.emp:
+# # for data in data_types:
+# #     for mem in mem_types:
+# slope = roof_df['HBMBw'].mean() / 1000
+# peak = roof_df['MFMAF32Flops'].mean() / 1000
+# # if 'pubbench' in args.results:
+# #     if df['PERF'].max() > peak:
+# #         peak = df['PERF'].max() / 1000
+# for gpu in gpus:
+#     emp_roofs[gpu] = (slope, peak)
+# print('Data gathered.')
 
 # for gpu in gpus:
 #     slope = (df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['PERF'] / df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['AI_HBM_MULADD_FP32']).max()
@@ -120,9 +135,19 @@ if args.results:
                         existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (existing_perf + perf_value, existing_power)
                     else:
-                        if op == 'GEMM':
-                            print(ai_value, ai_data_op_mem_col)
+                        # if op == 'GEMM':
+                            # print(ai_value, ai_data_op_mem_col)
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
+
+emp_roofs = defaultdict(lambda: defaultdict(dict))
+for gpu in gpus:
+    gpu_df = df[df['GPU'] == gpu]
+    for mem in mem_types:
+        for op in op_types:
+            for data in data_types:
+                ai_df = gpu_df[gpu_df['AI_' + mem + '_' + op + '_' + data] != 0]
+                print(op, data, gpu, ai_df['PERF'].max())
+                emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
 
 print('Plotting rooflines...')
 
@@ -152,8 +177,7 @@ p.toolbar_location = None
 # Create a toolbar box manually (you can also use p.toolbar as the toolbar itself)
 # toolbar = Toolbar(toolbar=p.toolbar, toolbar_location="right")
 # Dictionaries to hold references to the plotted lines
-op_sources = {}
-data_sources = {}
+roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 gpu_sources = {}
 
 # min_power = 200
@@ -213,8 +237,15 @@ scatter_data = {
     "power": [],
     "xs": [],
     "ys": [],
-    "color": [],
+    "color": []
 }
+
+# roofline_data = {
+#     "op": [],
+#     "data_type": [],
+#     "slope": [],
+#     "peak": []
+# }
 
 for key, gpu_data in kernels.items():
     # print(max([values[-1].max() for values in kernels.values()]))
@@ -226,21 +257,59 @@ for key, gpu_data in kernels.items():
         y_range = p.y_range
         # color_map = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
         roofline = False
+        slope, peak = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
+        x_intersect = peak / slope
+        x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+        x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+        x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+        x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+        y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+        y_slope = [y_slope.min(), y_slope.max()]
+        y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+        y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+    # print(f'Plotting {mem} {op} {data}...')
+    # print(f'Slope (Bw): {np.round(slope, 2)}')
+
+    # Create data sources for the lines
+        source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+        source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+
+        # Plot the lines without labels
+        slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+        peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        slope.name = 'roofline'
+        peak.name = 'roofline'
+
+        # roofline_data = {}
+
+        # roofline_data["slope"].append(slope)
+        # roofline_data["peak"].append(peak)
+
+        roofline_sources[gpu][op][data_type].append(slope)
+        roofline_sources[gpu][op][data_type].append(peak)
+        
+        
+        # roofline_data["peak"].append(peak)
+        # roofline_data["op"].append(op)
+        # roofline_data["data_type"].append(data_type)
+        # roofline_data["gpu"].append(gpu)
+        
         for ai, (perf, power) in ai_data.items():
             # Create source with all data including power
             x_left = ai / (10 ** (log_width / 2))
             x_right = ai * (10 ** (log_width / 2))
             bar_width = x_right - x_left
             # color = to_hex(color_map(norm(power)))
+            # print(gpu)
+            slope, peak = emp_roofs[gpu][mem + '_' + op + '_' + data_type]
 
-            slope, peak = emp_roofs[gpu]
-
-            if ai < peak / emp_roofs[gpu][0]:
-                y_patch = [0.05, emp_roofs[gpu][0] * x_left, emp_roofs[gpu][0] * x_right, 0.05]
+            if ai < peak / slope:
+                y_patch = [0.05, slope * x_left, slope * x_right, 0.05]
             else:
-                y_patch = [0.05, emp_roofs[gpu][1], emp_roofs[gpu][1], 0.05]
+                y_patch = [0.05, peak, peak, 0.05]
             
             knee = peak / slope
+            # print(knee)
 
             if ai > knee and roofline == False:
                 x_left = knee
@@ -259,6 +328,30 @@ for key, gpu_data in kernels.items():
             
             x_patch = [x_left, x_left, x_right, x_right]
 
+        #     peak, slope = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
+        #     x_intersect = peak / slope
+        #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+        #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+        #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+        #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+        #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+        #     y_slope = [y_slope.min(), y_slope.max()]
+        #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+        #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+        # # print(f'Plotting {mem} {op} {data}...')
+        # # print(f'Slope (Bw): {np.round(slope, 2)}')
+
+        # # Create data sources for the lines
+        #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+        #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+
+        #     # Plot the lines without labels
+        #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+        #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        #     slope.name = 'roofline'
+        #     peak.name = 'roofline'
+            
+
             scatter_data["x"].append(float(f"{ai:.10f}"))
             scatter_data["y"].append(float(f"{perf:.10f}"))
             scatter_data["op"].append(op)
@@ -268,12 +361,15 @@ for key, gpu_data in kernels.items():
             scatter_data["xs"].append(x_patch)
             scatter_data["ys"].append(y_patch)
             scatter_data["color"].append(None)
+            # scatter_data["slope"].append(slope)
+            # scatter_data["peak"].append(peak)
             
             if gpu not in gpu_sources:
                 gpu_sources[gpu] = []
 # print(scatter_data)
 
-for gpu, (slope, peak) in emp_roofs.items():
+for gpu, gpu_df in emp_roofs.items():
+
     min_power = df[df['GPU'] == gpu]['Power'].min()
     max_power = df[df['GPU'] == gpu]['Power'].max()
     min_power = min_power
@@ -338,37 +434,42 @@ for gpu, (slope, peak) in emp_roofs.items():
     # mem = key.split('_')[0]
     # op = key.split('_')[1]
     # data = key.split('_')[2]
-    x_intersect = peak / slope
-    x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-    x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-    x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-    x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-    y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-    y_slope = [y_slope.min(), y_slope.max()]
-    y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-    y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-    # print(f'Plotting {mem} {op} {data}...')
-    # print(f'Slope (Bw): {np.round(slope, 2)}')
+    # for key, (peak, slope) in gpu_df:
 
-    # Create data sources for the lines
-    source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-    source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+    #     x_intersect = peak / slope
+    #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+    #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+    #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+    #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+    #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+    #     y_slope = [y_slope.min(), y_slope.max()]
+    #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+    #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+    # # print(f'Plotting {mem} {op} {data}...')
+    # # print(f'Slope (Bw): {np.round(slope, 2)}')
 
-    # Plot the lines without labels
-    slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-    peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-    slope.name = 'roofline'
-    peak.name = 'roofline'
+    # # Create data sources for the lines
+    #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+    #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+
+    #     # Plot the lines without labels
+    #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+    #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+    #     slope.name = 'roofline'
+    #     peak.name = 'roofline'
     color_bar.name = 'power'
     power_label.name = 'power'
     
-    gpu_sources[gpu].append(slope)
-    gpu_sources[gpu].append(peak)
+    # gpu_sources[gpu].append(slope)
+    # gpu_sources[gpu].append(peak)
     gpu_sources[gpu].append(color_bar)
     gpu_sources[gpu].append(power_label)
 
 source_all = ColumnDataSource(data=scatter_data)
 source_full = ColumnDataSource(data=scatter_data)
+
+# roofline_all = ColumnDataSource(data=roofline_data)
+# roofline_full = ColumnDataSource(data=roofline_data)
 
 scatter_renderer = p.scatter(
     x="x", y="y", source=source_all,
@@ -455,8 +556,23 @@ callback_code = """
         for (const [gpu, renderers] of Object.entries(gpu_sources)) {
             const gpu_visible = selected_gpu === null || selected_gpu === gpu;
             for (const renderer of renderers) {
-                if (renderer.name === 'roofline' || renderer.name === 'power') {
+                if (renderer.name === 'power') {
                     renderer.visible = gpu_visible;
+                }
+            }
+        }
+
+        for (const [gpu, ops] of Object.entries(roofline_sources)) {
+            for (const [op, data_types] of Object.entries(ops)) {
+                for (const [data_type, renderers] of Object.entries(data_types)) {
+                    const should_show =
+                        gpu === selected_gpu &&
+                        op === selected_op &&
+                        data_type === selected_data;
+
+                    for (const renderer of renderers) {
+                        renderer.visible = should_show;
+                    }
                 }
             }
         }
@@ -466,7 +582,7 @@ callback_code = """
 """
 # Create the CustomJS callback
 callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes,
-                              gpu_sources=gpu_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
+                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
