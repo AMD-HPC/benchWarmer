@@ -74,25 +74,25 @@ else:
 
 # Extract roofline data into dictionary for easier access
 print('Gathering empirical roofline data...')
-mem_ops = {}
-if args.emp:
-    # for data in data_types:
-    #     for mem in mem_types:
-    slope = roof_df['HBMBw'].mean() / 1000
-    peak = roof_df['FP64Flops'].mean() / 1000
-    if 'pubbench' in args.results:
-        if df['PERF'].max() > peak:
-            peak = df['PERF'].max() / 1000
-    mem_ops['HBM' + '_' + 'VALU' + '_' + 'FP64'] = (slope, peak)
-    print('Data gathered.')
-
 gpus = df['GPU'].unique()
 emp_roofs = {}
+# if args.emp:
+# for data in data_types:
+#     for mem in mem_types:
+slope = roof_df['HBMBw'].mean() / 1000
+peak = roof_df['MFMAF32Flops'].mean() / 1000
+# if 'pubbench' in args.results:
+#     if df['PERF'].max() > peak:
+#         peak = df['PERF'].max() / 1000
 for gpu in gpus:
-    slope = (df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['PERF'] / df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['AI_HBM_MULADD_FP32']).max()
-    peak = df[df['GPU'] == gpu]['PERF'].max()
     emp_roofs[gpu] = (slope, peak)
-    emp_roofs[gpu]
+print('Data gathered.')
+
+# for gpu in gpus:
+#     slope = (df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['PERF'] / df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['AI_HBM_MULADD_FP32']).max()
+#     peak = df[df['GPU'] == gpu]['PERF'].max()
+#     emp_roofs[gpu] = (slope, peak)
+#     emp_roofs[gpu]
 
 # elif args.create:
 #     print('Creating new rooflines...')
@@ -120,6 +120,8 @@ if args.results:
                         existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (existing_perf + perf_value, existing_power)
                     else:
+                        if op == 'GEMM':
+                            print(ai_value, ai_data_op_mem_col)
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
 print('Plotting rooflines...')
