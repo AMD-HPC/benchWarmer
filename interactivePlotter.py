@@ -60,8 +60,8 @@ for gpu in gpus:
         emp_df['HBMBw'] = emp_df['HBMBw'].astype(float)
         peak_bw[gpu] = emp_df['HBMBw'].mean() / 1000
     else:
-        peak_bw['H100'] = 4400 / 1000
-        peak_bw['A100'] = 1300 / 1000
+        peak_bw['H100'] = 3350 / 1000
+        peak_bw['A100'] = 1592 / 1000
         peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
 
 
@@ -275,18 +275,37 @@ for key, gpu_data in kernels.items():
         source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
         # Plot the lines without labels
-        slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-        peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-        slope.name = 'roofline'
-        peak.name = 'roofline'
+        slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        slope_line.name = 'roofline'
+        peak_line.name = 'roofline'
 
         # roofline_data = {}
 
         # roofline_data["slope"].append(slope)
         # roofline_data["peak"].append(peak)
 
-        roofline_sources[gpu][op][data_type].append(slope)
-        roofline_sources[gpu][op][data_type].append(peak)
+        roofline_sources[gpu][op][data_type].append(slope_line)
+        roofline_sources[gpu][op][data_type].append(peak_line)
+
+        # roofline_sources[gpu][op][data_type] = {
+        #     "figure": p,
+        #     "renderers": [slope_line, peak_line]
+        # }
+        
+
+        # for data_type, entry in roofline_sources[gpu][op].items():
+        #     # print(entry)
+        #     p = entry["figure"]
+        #     for line in entry["renderers"]:
+        #         hover = HoverTool(
+        #             renderers=[line],
+        #             tooltips=[
+        #                 ("AI", "@x"),
+        #                 ("Performance", "@y TFLOPS/sec"),
+        #             ]
+        #         )
+        #         p.add_tools(hover)
         
         
         # roofline_data["peak"].append(peak)
