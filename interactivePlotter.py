@@ -52,6 +52,8 @@ if args.results:
 else:
     print('No runtimes file provided.')
 
+df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
+
 peak_bw = {}
 gpus = ['MI250X', 'MI250X (2 GCDs)', 'MI300A', 'MI300X', 'A100', 'H100']
 for gpu in gpus:
@@ -60,7 +62,7 @@ for gpu in gpus:
         emp_df['HBMBw'] = emp_df['HBMBw'].astype(float)
         peak_bw[gpu] = emp_df['HBMBw'].mean() / 1000
     else:
-        peak_bw['H100'] = 3350 / 1000
+        peak_bw['H100'] = 2982 / 1000
         peak_bw['A100'] = 1592 / 1000
         peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
 
@@ -163,14 +165,14 @@ op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
 tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
-p = figure(x_axis_type='log', y_range=(0.05, 1e3), x_range=(0.05, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
+p = figure(x_axis_type='log', y_range=(0.05, 1e3), x_range=(0.3, 1e5), y_axis_type='log',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
-p.title.text_font_size = '14pt'
-p.xaxis.axis_label_text_font_size = '16pt'
-p.yaxis.axis_label_text_font_size = '16pt'
-p.xaxis.major_label_text_font_size = '14pt'
-p.yaxis.major_label_text_font_size = '14pt'
+p.title.text_font_size = '18pt'
+p.xaxis.axis_label_text_font_size = '20pt'
+p.yaxis.axis_label_text_font_size = '20pt'
+p.xaxis.major_label_text_font_size = '18pt'
+p.yaxis.major_label_text_font_size = '18pt'
 
 p.toolbar_location = None
 
@@ -394,8 +396,8 @@ for gpu, gpu_df in emp_roofs.items():
     min_power = min_power
     max_power = max_power
     norm = plt.Normalize(
-        min_power,
-        max_power,
+        250,
+        750,
     )
     color_map = LinearSegmentedColormap.from_list(
         'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
@@ -407,7 +409,7 @@ for gpu, gpu_df in emp_roofs.items():
                             for r, g, b, a in rgba_colors]
 
     # Create Bokeh color mapper
-    color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
+    color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=250, high=750)
 
     # Add the color bar
     color_bar = ColorBar(
@@ -416,7 +418,8 @@ for gpu, gpu_df in emp_roofs.items():
         label_standoff=12,
         border_line_color=None,
         location=(0, 0),
-        visible=False
+        visible=False,
+        major_label_text_font_size="20pt",
     )
 
     y_axis_style = {
@@ -425,6 +428,10 @@ for gpu, gpu_df in emp_roofs.items():
         "text_font_style": p.yaxis[0].axis_label_text_font_style,
         "text_color": p.yaxis[0].axis_label_text_color,
     }
+    # Add the color bar with extra padding using padding property
+    # Instead of using color_bar.padding (which reduces plot area), add Spacer to the layout for extra space
+    # Remove or set minimal padding for color_bar
+    color_bar.padding = 0
     p.add_layout(color_bar, 'right')
 
     power_label = Title(
