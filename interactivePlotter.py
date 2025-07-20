@@ -21,7 +21,6 @@ from matplotlib.patches import Patch
 from matplotlib.colors import to_hex, LinearSegmentedColormap, to_rgba
 from bokeh.io import output_file
 from bokeh.models import HoverTool
-from bokeh.models import Legend, LegendItem
 
 # Get filenames from input args
 parser = argparse.ArgumentParser()
@@ -53,9 +52,11 @@ if args.results:
 else:
     print('No runtimes file provided.')
 
-# df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
+df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
 
 peak_bw = {}
+theo_peak_bw = {}
+theo_peak_perf = {}
 gpus = ['MI250X', 'MI250X (2 GCDs)', 'MI300A', 'MI300X', 'A100', 'H100']
 for gpu in gpus:
     if gpu not in ['A100', 'H100', 'MI250X (2 GCDs)']:
@@ -66,6 +67,20 @@ for gpu in gpus:
         peak_bw['H100'] = 2982 / 1000
         peak_bw['A100'] = 1592 / 1000
         peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
+    theo_peak_bw['H100'] = 3.35
+    theo_peak_bw['MI300X'] = 5.3
+    theo_peak_bw['MI250X (2 GCDs)'] = 3.2
+    theo_peak_bw['MI250X'] = 1.6
+    theo_peak_bw['MI300A'] = 5.3
+    theo_peak_bw['A100'] = 1.555
+
+    theo_peak_perf['H100'] = 66.9
+    theo_peak_perf['MI300X'] = 163.4
+    theo_peak_perf['MI250X (2 GCDs)'] = 47.9
+    theo_peak_perf['MI250X'] = 23.95
+    theo_peak_perf['MI300A'] = 122.6
+    theo_peak_perf['A100'] = 19.5
+
 
 
 
@@ -143,6 +158,7 @@ if args.results:
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
 emp_roofs = defaultdict(lambda: defaultdict(dict))
+theo_emp_roofs = defaultdict(lambda: defaultdict(dict))
 for gpu in gpus:
     gpu_df = df[df['GPU'] == gpu]
     for mem in mem_types:
@@ -151,6 +167,7 @@ for gpu in gpus:
                 ai_df = gpu_df[gpu_df['AI_' + mem + '_' + op + '_' + data] != 0]
                 print(op, data, gpu, ai_df['PERF'].max())
                 emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
+                theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu], theo_peak_perf[gpu])
 
 print('Plotting rooflines...')
 
@@ -168,7 +185,7 @@ op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
 p = figure(x_axis_type='log', y_range=(0.05, 1e3), x_range=(0.3, 1e5), y_axis_type='log',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
-           y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=700, height=600)
+           y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
 p.title.text_font_size = '18pt'
 p.xaxis.axis_label_text_font_size = '20pt'
 p.yaxis.axis_label_text_font_size = '20pt'
@@ -181,6 +198,7 @@ p.toolbar_location = None
 # toolbar = Toolbar(toolbar=p.toolbar, toolbar_location="right")
 # Dictionaries to hold references to the plotted lines
 roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+peak_roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 gpu_sources = {}
 
 # min_power = 200
@@ -240,7 +258,6 @@ scatter_data = {
     "power": [],
     "xs": [],
     "ys": [],
-    "blas": [],
     "color": []
 }
 
@@ -280,7 +297,7 @@ for key, gpu_data in kernels.items():
 
         # Plot the lines without labels
         slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', visible=False)
         slope_line.name = 'roofline'
         peak_line.name = 'roofline'
 
@@ -291,6 +308,38 @@ for key, gpu_data in kernels.items():
 
         roofline_sources[gpu][op][data_type].append(slope_line)
         roofline_sources[gpu][op][data_type].append(peak_line)
+
+
+        slope, peak = theo_emp_roofs[gpu]['HBM_' + op + '_' + data_type]
+        x_intersect = peak / slope
+        x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+        x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+        x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+        x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+        y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+        y_slope = [y_slope.min(), y_slope.max()]
+        y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+        y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+    # print(f'Plotting {mem} {op} {data}...')
+    # print(f'Slope (Bw): {np.round(slope, 2)}')
+
+    # Create data sources for the lines
+        source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+        source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+
+        # Plot the lines without labels
+        slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', line_dash='dashed', visible=False)
+        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        slope_line.name = 'roofline'
+        peak_line.name = 'roofline'
+
+        # roofline_data = {}
+
+        # roofline_data["slope"].append(slope)
+        # roofline_data["peak"].append(peak)
+
+        peak_roofline_sources[gpu][op][data_type].append(slope_line)
+        peak_roofline_sources[gpu][op][data_type].append(peak_line)
 
         # roofline_sources[gpu][op][data_type] = {
         #     "figure": p,
@@ -384,10 +433,6 @@ for key, gpu_data in kernels.items():
             scatter_data["xs"].append(x_patch)
             scatter_data["ys"].append(y_patch)
             scatter_data["color"].append(None)
-            if op == 'GEMM':
-                scatter_data["blas"].append(df[(df['AI_HBM_GEMM_FP32'] == ai) & (df['PERF'] == perf)].iloc[0]['gridSize'] == 256)
-            else:
-                scatter_data["blas"].append(False)
             # scatter_data["slope"].append(slope)
             # scatter_data["peak"].append(peak)
             
@@ -402,8 +447,8 @@ for gpu, gpu_df in emp_roofs.items():
     min_power = min_power
     max_power = max_power
     norm = plt.Normalize(
-        min_power,
-        max_power,
+        250,
+        750,
     )
     color_map = LinearSegmentedColormap.from_list(
         'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
@@ -415,7 +460,7 @@ for gpu, gpu_df in emp_roofs.items():
                             for r, g, b, a in rgba_colors]
 
     # Create Bokeh color mapper
-    color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
+    color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=250, high=750)
 
     # Add the color bar
     color_bar = ColorBar(
@@ -461,7 +506,7 @@ for gpu, gpu_df in emp_roofs.items():
             #     print(df[df['GPU'] == 'GPU']['Power'].max())
             #     print(to_hex(color_map(norm(power))))
             # print(to_hex(color_map(norm(power))))
-            # scatter_data['color'][i] = to_hex(color_map(norm(power)))
+            scatter_data['color'][i] = to_hex(color_map(norm(power)))
     
     # mem = key.split('_')[0]
     # op = key.split('_')[1]
@@ -503,38 +548,16 @@ source_full = ColumnDataSource(data=scatter_data)
 # roofline_all = ColumnDataSource(data=roofline_data)
 # roofline_full = ColumnDataSource(data=roofline_data)
 
-# Set color based on 'blas' field: blue if True, orange if False
-scatter_colors = ['blue' if blas else 'orange' for blas in scatter_data['blas']]
-source_all.data['color'] = scatter_colors
-source_full.data['color'] = scatter_colors
-print(source_full.data['color'])
-
 scatter_renderer = p.scatter(
     x="x", y="y", source=source_all,
-    size=10, color="color", marker='circle', visible=False
+    size=12, color='black', marker='circle', visible=False
 )
-# Add legend text in the corner for dot color meaning
-# Add legend for dot color meaning (blue/orange) using a fixed annotation in the top right
-
-from bokeh.models import LegendItem
-from bokeh.models import Scatter
-
-# Create two invisible dummy renderers for legend color control
-dummy_blue = p.scatter(color="blue", size=10, marker="circle", visible=True)
-dummy_orange = p.scatter(color="orange", size=10, marker="circle", visible=True)
-
-legend_items = [
-    LegendItem(label="builtin_amd_gcn", renderers=[dummy_orange]),
-    LegendItem(label="rocblas_sgemm", renderers=[dummy_blue]),
-]
-legend = Legend(items=legend_items, location="top_right", label_text_font_size="18pt", background_fill_alpha=0.7)
-p.add_layout(legend, 'center')
 
 power_renderer = p.patches(
     xs='xs',
     ys='ys',
     source=source_all,
-    fill_color=None,
+    fill_color='color',
     fill_alpha=0.7,
     line_color=None,
     level='underlay',
@@ -563,6 +586,16 @@ bigger_font_css = """
     font-family: Arial, sans-serif;
 }
 """
+
+corner_label = Label(
+    x=20, y=450, x_units='screen', y_units='screen',
+    text='- - - Indicates Peak Theoretical Performance\n—   Indicates Peak Empirical Performance',
+    text_font_size='16pt',
+    text_color='black',
+    background_fill_color='white',
+    background_fill_alpha=0.7
+)
+p.add_layout(corner_label)
 
 for rg in (op_checkboxes, data_checkboxes, gpu_checkboxes):
     rg.stylesheets.append(bigger_font_css)
@@ -607,7 +640,31 @@ callback_code = """
         power_renderer.visible = true;
         console.log(source_all.data);
 
+        for (const [gpu, renderers] of Object.entries(gpu_sources)) {
+            const gpu_visible = selected_gpu === null || selected_gpu === gpu;
+            for (const renderer of renderers) {
+                if (renderer.name === 'power') {
+                    renderer.visible = gpu_visible;
+                }
+            }
+        }
+
         for (const [gpu, ops] of Object.entries(roofline_sources)) {
+            for (const [op, data_types] of Object.entries(ops)) {
+                for (const [data_type, renderers] of Object.entries(data_types)) {
+                    const should_show =
+                        gpu === selected_gpu &&
+                        op === selected_op &&
+                        data_type === selected_data;
+
+                    for (const renderer of renderers) {
+                        renderer.visible = should_show;
+                    }
+                }
+            }
+        }
+
+        for (const [gpu, ops] of Object.entries(peak_roofline_sources)) {
             for (const [op, data_types] of Object.entries(ops)) {
                 for (const [data_type, renderers] of Object.entries(data_types)) {
                     const should_show =
@@ -627,7 +684,7 @@ callback_code = """
 """
 # Create the CustomJS callback
 callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes,
-                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
+                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
