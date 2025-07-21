@@ -54,6 +54,8 @@ else:
     print('No runtimes file provided.')
 
 peak_bw = {}
+theo_peak_bw = {}
+theo_peak_perf = {}
 gpus = ['MI250X', 'MI250X (2 GCDs)', 'MI300A', 'MI300X', 'A100', 'H100']
 for gpu in gpus:
     if gpu not in ['A100', 'H100', 'MI250X (2 GCDs)']:
@@ -64,6 +66,20 @@ for gpu in gpus:
         peak_bw['H100'] = 2982 / 1000
         peak_bw['A100'] = 1379 / 1000
         peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
+
+theo_peak_bw['H100'] = 3.35
+theo_peak_bw['MI300X'] = 5.3
+theo_peak_bw['MI250X (2 GCDs)'] = 3.2
+theo_peak_bw['MI250X'] = 1.6
+theo_peak_bw['MI300A'] = 5.3
+theo_peak_bw['A100'] = 1.555
+
+theo_peak_perf['H100'] = 66.9
+theo_peak_perf['MI300X'] = 163.4
+theo_peak_perf['MI250X (2 GCDs)'] = 47.9
+theo_peak_perf['MI250X'] = 23.95
+theo_peak_perf['MI300A'] = 122.6
+theo_peak_perf['A100'] = 19.5
 
 
 # df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
@@ -141,6 +157,7 @@ if args.results:
                         kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
 
 emp_roofs = defaultdict(lambda: defaultdict(dict))
+theo_emp_roofs = defaultdict(lambda: defaultdict(dict))
 for gpu in gpus:
     gpu_df = df[df['GPU'] == gpu]
     for mem in mem_types:
@@ -149,6 +166,7 @@ for gpu in gpus:
                 ai_df = gpu_df[gpu_df['AI_' + mem + '_' + op + '_' + data] != 0]
                 print(op, data, gpu, ai_df['PERF'].max())
                 emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
+                theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu], theo_peak_perf[gpu])
 
 print('Plotting rooflines...')
 
@@ -179,6 +197,7 @@ p.toolbar_location = None
 # toolbar = Toolbar(toolbar=p.toolbar, toolbar_location="right")
 # Dictionaries to hold references to the plotted lines
 roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
+peak_roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 gpu_sources = {}
 
 # min_power = 200
@@ -277,7 +296,7 @@ for key, gpu_data in kernels.items():
 
         # Plot the lines without labels
         slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', visible=False)
         slope_line.name = 'roofline'
         peak_line.name = 'roofline'
 
@@ -288,6 +307,37 @@ for key, gpu_data in kernels.items():
 
         roofline_sources[gpu][op][data_type].append(slope_line)
         roofline_sources[gpu][op][data_type].append(peak_line)
+
+        slope, peak = theo_emp_roofs[gpu]['HBM_' + op + '_' + data_type]
+        x_intersect = peak / slope
+        x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+        x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+        x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+        x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+        y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+        y_slope = [y_slope.min(), y_slope.max()]
+        y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+        y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+    # print(f'Plotting {mem} {op} {data}...')
+    # print(f'Slope (Bw): {np.round(slope, 2)}')
+
+    # Create data sources for the lines
+        source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+        source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+
+        # Plot the lines without labels
+        slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', line_dash='dashed', visible=False)
+        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+        slope_line.name = 'roofline'
+        peak_line.name = 'roofline'
+
+        # roofline_data = {}
+
+        # roofline_data["slope"].append(slope)
+        # roofline_data["peak"].append(peak)
+
+        peak_roofline_sources[gpu][op][data_type].append(slope_line)
+        peak_roofline_sources[gpu][op][data_type].append(peak_line)
 
         # roofline_sources[gpu][op][data_type] = {
         #     "figure": p,
@@ -530,6 +580,16 @@ bigger_font_css = """
 }
 """
 
+corner_label = Label(
+    x=20, y=450, x_units='screen', y_units='screen',
+    text='- - - Indicates Peak Theoretical Performance\n—   Indicates Peak Empirical Performance',
+    text_font_size='16pt',
+    text_color='black',
+    background_fill_color='white',
+    background_fill_alpha=0.7
+)
+p.add_layout(corner_label)
+
 for rg in (op_checkboxes, data_checkboxes, gpu_checkboxes):
     rg.stylesheets.append(bigger_font_css)
 
@@ -596,13 +656,28 @@ callback_code = """
                 }
             }
         }
+
+        for (const [gpu, ops] of Object.entries(peak_roofline_sources)) {
+            for (const [op, data_types] of Object.entries(ops)) {
+                for (const [data_type, renderers] of Object.entries(data_types)) {
+                    const should_show =
+                        gpu === selected_gpu &&
+                        op === selected_op &&
+                        data_type === selected_data;
+
+                    for (const renderer of renderers) {
+                        renderer.visible = should_show;
+                    }
+                }
+            }
+        }
     }
 
     update_visibility();
 """
 # Create the CustomJS callback
 callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes,
-                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
+                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
