@@ -189,7 +189,6 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	
 	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
@@ -243,18 +242,16 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 
 // MI200 hardware uses packed arithmetic on FP32 Add, Multiply, and FMA instructions
 template<int n, class Func>
-__global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize, unsigned long long seed)
+__global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
 	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
-	rand(State) state;
-    rand(_init)(seed + gid, 0, 0, &state);
 
 	float2 *a;
 	a = &buf[gid];
-	float2 x = {rand(_uniform)(&state) * 100, rand(_uniform)(&state) * 100};
-	float2 y = {rand(_uniform)(&state) * 100, rand(_uniform)(&state) * 100};
+	float2 x = {342.4829345, 57.39827442};
+	float2 y = {86.39828247, 982.3298189};
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -396,13 +393,13 @@ static void bench_func(bool rocstar, bool record) {
   // throughput_kernel: All other tests
   if (datatype == "fp32" && (op == "MulAdd")) {
     // FP32 MulAdd
-    packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+    packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype == "fp32" && (op == "Add")) {
     // FP32 Add
-    packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+    packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype == "fp32" && (op == "Mul")) {
     // FP32 Mul
-    packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+    packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
     // Integer Add, Mul
 	totalBytes *= 2;
@@ -445,17 +442,17 @@ static void bench_func(bool rocstar, bool record) {
     if (datatype == "fp32" && (op == "MulAdd")) {
       // FP32 MulAdd
 			initTimeEvents(start, stop);
-      packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+      packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (datatype == "fp32" && (op == "Add")) {
       // FP32 Add
 			initTimeEvents(start, stop);
-      packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+      packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (datatype == "fp32" && (op == "Mul")) {
       // FP32 Mul
 			initTimeEvents(start, stop);
-      packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2, seed);
+      packed_throughput_kernel<nOps,Mul<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
     } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
       // Integer Add, 
