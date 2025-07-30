@@ -166,8 +166,8 @@ __global__ void rsqrt_kernel(T *buf, uint32_t nSize)
 
 	T *a;
 	a = &buf[gid];
-	T x = a[0];
-	T y = a[1];
+	T x = static_cast<T>(2);
+	T y = static_cast<T>(3);
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -178,7 +178,7 @@ __global__ void rsqrt_kernel(T *buf, uint32_t nSize)
 		for(int j=0; j<n; j++)
 		{
 			// Two different write locations to force the compiler to complete every operation
-			a[offset] = func(a[offset], x, y);
+			x = func(x, x, y);
 		}
 	}
   a[0] = x;
@@ -189,12 +189,11 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 {
 	const uint32_t gid = blockDim.x * blockIdx.x + threadIdx.x;
 	const uint32_t nThreads  = gridDim.x * blockDim.x;
-	//const uint32_t nEntriesPerThread = (uint32_t) nSize / nThreads;
 
 	T *a;
 	a = &buf[gid];
-	T x = a[0];
-	T y = a[1];
+	T x = static_cast<T>(2);
+	T y = static_cast<T>(3);
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -205,7 +204,7 @@ __global__ void throughput_kernel(T *buf, uint32_t nSize)
 		for(int j=0; j<n; j++)
 		{
 			// Two different write locations to force the compiler to complete every operation
-			x = func(a[offset], x, y);
+			x = func(x, x, y);
 		}
 	}
   a[0] = x;
@@ -222,8 +221,8 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 
 	T *a;
 	a = &buf[gid];
-	T x = a[0];
-	T y = a[1];
+	T x = static_cast<T>(2);
+	T y = static_cast<T>(3);
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -234,8 +233,8 @@ __global__ void throughput_kernel_unrolled(T *buf, uint32_t nSize)
 		for(int j=0; j<n; j+=2)
 		{
 			// Two different write locations to force the compiler to complete every operation
-			x = func(a[offset], x, y);
-			a[offset] = func(a[offset], x, y);
+			x = func(x, x, y);
+			x = func(x, x, y);
 		}
 	}
 }
@@ -250,8 +249,8 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 
 	float2 *a;
 	a = &buf[gid];
-	float2 x = {342.4829345, 57.39827442};
-	float2 y = {86.39828247, 982.3298189};
+	float2 x = {2.0f, 3.0f};
+	float2 y = {4.0f, 5.0f};
 	Func func;
 
 	// Unroll to prevent the compiler from optimizing out the work
@@ -261,7 +260,7 @@ __global__ void packed_throughput_kernel(float2 *buf, uint32_t nSize)
 		#pragma unroll
 		for(int j=0; j<n; j++)
 		{
-			x = {func(a[offset].x, x.x, y.x), func(a[offset].y, x.y, y.y)};
+			x = {func(x.x, x.x, y.x), func(x.y, x.y, y.y)};
 		}
 	}
 	a[0] = x;
@@ -373,8 +372,27 @@ static void bench_func(bool rocstar, bool record) {
 	}
   uint64_t totalBytes = (uint64_t)nSize * (uint64_t)sizeof(T);
 
-  T *memBlock;
-  assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+	T *memBlock;
+	assert((gpu(Malloc((void**)&memBlock, DEFAULT_DATASET_SIZE)))==gpu(Success));
+
+	// Initialize memBlock with integers 1 to nSize
+	std::vector<T> hostInit(nSize);
+	for (int i = 0; i < nSize; ++i) {
+		hostInit[i] = static_cast<T>(i + 1);
+	}
+	gpu(Memcpy)(memBlock, hostInit.data(), nSize * sizeof(T), gpu(MemcpyHostToDevice));
+
+  T hostMemBlock[5];
+  gpu(Memcpy)(hostMemBlock, memBlock, sizeof(T) * 5, gpu(MemcpyDeviceToHost));
+  // Print hostMemBlock[0] with the correct format specifier for T
+  for (int n = 0; n < 5; ++n) {
+	if (std::is_same<T, float>::value) {
+		printf("Element: %f\n", static_cast<float>(hostMemBlock[n]));
+	} else {
+		// fallback for unknown types
+		printf("Unknown type\n");
+	}
+   }
 
   // Launch kernel to initialize the buffer in parallel
   unsigned long long seed = 12345;  // A random seed for random number generation
@@ -384,7 +402,7 @@ static void bench_func(bool rocstar, bool record) {
   int gridSize = (nSize + blockSize - 1) / blockSize; // Compute number of blocks
 
   // Explicitly instantiate the template for the kernel
-  initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
+//   initializeRandom<T><<<gridSize, blockSize>>>(memBlock, nSize, seed);
 	
 
   // WARMUP KERNEL
@@ -394,7 +412,8 @@ static void bench_func(bool rocstar, bool record) {
   if (datatype == "fp32" && (op == "MulAdd")) {
     // FP32 MulAdd
     packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
-  } else if (datatype == "fp32" && (op == "Add")) {
+  } 
+  else if (datatype == "fp32" && (op == "Add")) {
     // FP32 Add
     packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
   } else if (datatype == "fp32" && (op == "Mul")) {
@@ -407,7 +426,7 @@ static void bench_func(bool rocstar, bool record) {
 } else if (op == "Rsqrt") {
 	totalBytes *= 2;
 	rsqrt_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
-  }	else {
+  }  else {
     // Every other test
     throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
   }
@@ -430,21 +449,25 @@ static void bench_func(bool rocstar, bool record) {
 	}
   #endif
 
+
   for (int n=0; n<numExperiments; n++)
   {
     // Launch kernel to initialize the buffer in parallel
-    initializeRandom<<<gridSize, blockSize>>>(memBlock, nSize, seed + n);
-    gpu(DeviceSynchronize());
+    // initializeRandom<<<gridSize, blockSize>>>(memBlock, nSize, seed + n);
+    // gpu(DeviceSynchronize());
+
 
 		// packed_throughput_kernel: FP32 Add, Mul, MulAdd
 		// throughput_kernel_unrolled: All Integer Add, Mul
 		// throughput_kernel: All other tests
     if (datatype == "fp32" && (op == "MulAdd")) {
       // FP32 MulAdd
-			initTimeEvents(start, stop);
+	// printf("datatype: %s, op: %s\n", datatype.c_str(), op.c_str());
+	initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,MulAdd<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
 			stopTimeEvents(eventMs, start, stop);
-    } else if (datatype == "fp32" && (op == "Add")) {
+    } 
+	else if (datatype == "fp32" && (op == "Add")) {
       // FP32 Add
 			initTimeEvents(start, stop);
       packed_throughput_kernel<nOps,Add<float>><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((float2 *)memBlock, nSize/2);
@@ -456,17 +479,17 @@ static void bench_func(bool rocstar, bool record) {
 			stopTimeEvents(eventMs, start, stop);
     } else if (datatype.find("int") != std::string::npos && (op == "Add" || op == "Mul")) {
       // Integer Add, 
-	//   printf("going throughput_kernel_unrolled!");
+	  printf("going throughput_kernel_unrolled!");
 			initTimeEvents(start, stop);
       throughput_kernel_unrolled<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 			stopTimeEvents(eventMs, start, stop);
 	} else if (op == "Rsqrt") {
-		// printf("going rsqrt_kernel!");
+		printf("going rsqrt_kernel!");
 		initTimeEvents(start, stop);
 		rsqrt_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
 		stopTimeEvents(eventMs, start, stop);
 	}	else {
-		// Every other test
+	// 	// Every other test
 		// printf("going through throughput_kernel!");
 			initTimeEvents(start, stop);
       throughput_kernel<T,nOps,Func><<<dim3(numWorkgroups), dim3(workgroupSize)>>>((T *)memBlock, nSize);
@@ -638,7 +661,7 @@ static void bench_convert(void) {
   
   // Warmup kernel
   convertKernel<T_in, T_out><<<numWorkgroups, workgroupSize>>>(d_input, d_output, nSize);
-
+  gpu(DeviceSynchronize());
 	// Timing data
   float eventMs;
   gpu(Event_t) start, stop;
@@ -911,7 +934,7 @@ if (! (i8 || i16 || i32 || i64 || fp16 || fp32 || fp64)) {
 	i8=1, i16=1, i32=1, i64=1, fp16=1, fp32=1, fp64=1;
 }
 // Print header for CSV file
-// printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
+printf("Datatype, Operation, Throughput mean (GFlops/s), Throughput stdev (GFlops/s), Duration mean (ms), Total flops, Total bytes accessed, AI, Workgroups, Threads, Experiments\n");
 if (i8) {
 bench_int<uint8_t>(add, mul, muladd, div, rsq, shift, rotate, rocstar, record, convert);
 }
