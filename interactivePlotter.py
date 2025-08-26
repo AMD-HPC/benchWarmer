@@ -36,12 +36,17 @@ parser.add_argument('-f', '--filename', required=True, help='Filename which you 
 args = parser.parse_args()
 
 print('Parsing arguments...')
+data_types = args.datatypes.split()
+ops = args.operations.split()
+
+print(data_types)
+print(ops)
 
 if args.results:
     df = pd.read_csv(args.results)
     df['Power'] = df['Power'].fillna(0)
     df['PERF'] = df['PERF'] / 1000
-    df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
+    # df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
     # Consolidate rows for GPU 'MI250X_two_gcd'
     if 'MI250X_two_gcd' in df['GPU'].values:
         ai_cols = [col for col in df.columns if 'AI_' in col]
@@ -54,10 +59,14 @@ else:
     print('No runtimes file provided.')
 
 peak_bw = {}
-theo_peak_bw = {}
-theo_peak_perf = {}
+
+theo_bw = {}
+theo_perf = {}
+theo_peak_bw = defaultdict(lambda: defaultdict(dict))
+theo_peak_perf = defaultdict(lambda: defaultdict(dict))
 gpus = ['MI250X', 'MI250X (2 GCDs)', 'MI300A', 'MI300X', 'A100', 'H100']
 for gpu in gpus:
+    # for 
     if gpu not in ['A100', 'H100', 'MI250X (2 GCDs)']:
         emp_df = pd.read_csv(f'./roofline_csvs/roofline_{gpu}.csv')
         emp_df['HBMBw'] = emp_df['HBMBw'].astype(float)
@@ -67,19 +76,55 @@ for gpu in gpus:
         peak_bw['A100'] = 1379 / 1000
         peak_bw['MI250X (2 GCDs)'] = 2500 / 1000
 
-theo_peak_bw['H100'] = 3.35
-theo_peak_bw['MI300X'] = 5.3
-theo_peak_bw['MI250X (2 GCDs)'] = 3.2
-theo_peak_bw['MI250X'] = 1.6
-theo_peak_bw['MI300A'] = 5.3
-theo_peak_bw['A100'] = 1.555
+theo_bw['H100'] = 3.35
+theo_bw['MI300X'] = 5.3
+theo_bw['MI250X (2 GCDs)'] = 3.2
+theo_bw['MI250X'] = 1.6
+theo_bw['MI300A'] = 5.3
+theo_bw['A100'] = 1.555
 
-theo_peak_perf['H100'] = 66.9
-theo_peak_perf['MI300X'] = 163.4
-theo_peak_perf['MI250X (2 GCDs)'] = 47.9
-theo_peak_perf['MI250X'] = 23.95
-theo_peak_perf['MI300A'] = 122.6
-theo_peak_perf['A100'] = 19.5
+theo_perf['H100'] = 66.9
+theo_perf['MI300X'] = 163.4
+theo_perf['MI250X (2 GCDs)'] = 90.5
+theo_perf['MI250X'] = 45.25
+theo_perf['MI300A'] = 122.6
+theo_perf['A100'] = 19.5
+
+for gpu in gpus:
+    for op in ops:
+        for data in data_types:
+            print(gpu, op, data)
+            theo_peak_bw[gpu][op][data] = theo_bw[gpu]
+
+for gpu in gpus:
+    for op in ops:
+        for data in data_types:
+            theo_peak_perf[gpu][op][data] = theo_perf[gpu]
+
+theo_peak_perf['H100']['GEMM']['FP32'] = 66.9
+theo_peak_perf['H100']['GEMM']['BF16'] = 989.4
+theo_peak_perf['H100']['GEMM']['FP8'] = 1978.9
+
+theo_peak_perf['MI300X']['GEMM']['FP32'] = 163.4
+theo_peak_perf['MI300X']['GEMM']['BF16'] = 1307.4
+theo_peak_perf['MI300X']['GEMM']['FP8'] = 2614.9
+# theo_peak_perf['H100']['GEMM']['BF16'] = 989.4
+
+
+
+# theo_peak_bw['H100'] = 3.35
+# theo_peak_bw['MI300X'] = 5.3
+# theo_peak_bw['MI250X (2 GCDs)'] = 3.2
+# theo_peak_bw['MI250X'] = 1.6
+# theo_peak_bw['MI300A'] = 5.3
+# theo_peak_bw['A100'] = 1.555
+
+# theo_peak_perf['H100'] = 66.9
+# theo_peak_perf['MI300X'] = 163.4
+# theo_peak_perf['MI250X (2 GCDs)'] = 90.5
+# theo_peak_perf['MI250X'] = 45.25
+# theo_peak_perf['MI300A'] = 122.6
+# theo_peak_perf['A100'] = 19.5
 
 
 # df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
@@ -128,7 +173,7 @@ else:
 
 # elif args.create:
 #     print('Creating new rooflines...')
-kernels = defaultdict(lambda: defaultdict(dict))
+kernels = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 if args.results:
     ai_cols = [c for c in df.columns if 'AI_' in c]
     for data in data_types:
@@ -136,26 +181,45 @@ if args.results:
         for op in op_types:
             ai_data_op_cols = [c for c in ai_data_cols if op == c.split('_')[-2]]
             for mem in mem_types:
-                ai_data_op_mem_col = [c for c in ai_data_op_cols if mem == c.split('_')[-3]][0]
-                # print(op, data, ai_data_op_mem_cols)
-                # print(ai_data_op_mem_cols)
-                df_subset = df[df[ai_data_op_mem_col] != 0]
-                for _, row_data in df_subset.iterrows():
-                    gpu = row_data['GPU']
-                    ai_value = row_data[ai_data_op_mem_col]
-                    perf_value = row_data['PERF']
-                    # if 'RSQ' in ai_data_op_mem_col:
-                    #     perf_value *= 1.5
-                    #     ai_value *= 0.75
-                    power_value = row_data['Power']
-                    if ai_value in kernels[mem + '_' + op + '_' + data][gpu]:
-                        existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
-                        kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (existing_perf + perf_value, existing_power)
-                    else:
-                        # if op == 'GEMM':
-                            # print(ai_value, ai_data_op_mem_col)
-                        kernels[mem + '_' + op + '_' + data][gpu][ai_value] = (perf_value, power_value)
+                if ai_data_op_cols:
+                    ai_data_op_mem_col = [c for c in ai_data_op_cols if mem == c.split('_')[-3]][0]
+                    # print(op, data, ai_data_op_mem_cols)
+                    # print(ai_data_op_mem_cols)
+                    df_subset = df[df[ai_data_op_mem_col] != 0]
+                    for _, row_data in df_subset.iterrows():
+                        gpu = row_data['GPU']
+                        ai_value = row_data[ai_data_op_mem_col]
+                        perf_value = row_data['PERF']
+                        # m = row_data['M']
+                        # n = row_data['M']
+                        # k = row_data['M']
+                        # if 'RSQ' in ai_data_op_mem_col:
+                        #     perf_value *= 1.5
+                        #     ai_value *= 0.75
+                        power_value = row_data['Power']
+                        if gpu == 'MI250X_two_gcd':
+                            existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
+                            kernels[mem + '_' + op + '_' + data][gpu][ai_value][0] += (existing_perf + perf_value, existing_power)
+                        else:
+                            # if op == 'GEMM':
+                                # print(ai_value, ai_data_op_mem_col)
+                            kernels[mem + '_' + op + '_' + data][gpu][ai_value].append((perf_value, power_value))
+                            # kernels[mem + '_' + op + '_' + data][gpu][ai_value]
+                            
+                            # d = kernels[mem + '_' + op + '_' + data][gpu]
 
+                            # # Sort the items by key and reconstruct as defaultdict(list)
+                            # sorted_d = defaultdict(list, sorted(d.items()))
+
+                            # # Overwrite the original dictionary
+                            # kernels[mem + '_' + op + '_' + data][gpu] = sorted_d
+
+
+# for data in data_types:
+#     for op in op_types:
+#         for mem in mem_types:
+#             for gpu in gpus:
+#                 kernels[mem + '_' + op + '_' + data][gpu][ai_value]
 emp_roofs = defaultdict(lambda: defaultdict(dict))
 theo_emp_roofs = defaultdict(lambda: defaultdict(dict))
 for gpu in gpus:
@@ -163,10 +227,12 @@ for gpu in gpus:
     for mem in mem_types:
         for op in op_types:
             for data in data_types:
-                ai_df = gpu_df[gpu_df['AI_' + mem + '_' + op + '_' + data] != 0]
-                print(op, data, gpu, ai_df['PERF'].max())
-                emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
-                theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu], theo_peak_perf[gpu])
+                col = 'AI_' + mem + '_' + op + '_' + data
+                if col in gpu_df:
+                    ai_df = gpu_df[gpu_df[col] != 0]
+                    print(op, data, gpu, ai_df['PERF'].max())
+                    emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
+                    theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu][op][data], theo_peak_perf[gpu][op][data])
 
 print('Plotting rooflines...')
 
@@ -181,8 +247,8 @@ gpu_type_colors = {data: color for data, color in zip(gpus, colors)}
 op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
-tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
-p = figure(x_axis_type='log', y_range=(0.05, 1e3), x_range=(0.05, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
+tooltips = [("AI", "@x"), ("M", "@m"), ("N", "@n"), ("K", "@k"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
+p = figure(x_axis_type='log', y_range=(0.1, 1e4), x_range=(1, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
 p.title.text_font_size = '14pt'
@@ -246,9 +312,9 @@ gpu_sources = {}
 # )
 # p.add_layout(power_label, 'right')
 
-log_width = 0.303
+log_width = 0.053
 
-scatter_data = {
+scatter_data_power = {
     "x": [],
     "y": [],
     "op": [],
@@ -257,7 +323,22 @@ scatter_data = {
     "power": [],
     "xs": [],
     "ys": [],
-    "color": []
+    "color": [],
+    "m": [],
+    "n": [],
+    "k": []
+}
+
+scatter_data = {
+    "x": [],
+    "y": [],
+    "op": [],
+    "data_type": [],
+    "gpu": [],
+    "power": [],
+    "m": [],
+    "n": [],
+    "k": []
 }
 
 # roofline_data = {
@@ -364,78 +445,97 @@ for key, gpu_data in kernels.items():
         # roofline_data["data_type"].append(data_type)
         # roofline_data["gpu"].append(gpu)
         
-        for ai, (perf, power) in ai_data.items():
-            # Create source with all data including power
-            x_left = ai / (10 ** (log_width / 2))
-            x_right = ai * (10 ** (log_width / 2))
-            bar_width = x_right - x_left
-            # color = to_hex(color_map(norm(power)))
-            # print(gpu)
-            slope, peak = emp_roofs[gpu][mem + '_' + op + '_' + data_type]
+        for ai, data in ai_data.items():
+            for perf, power in data:
+                # Create source with all data including power
+                x_left = ai / (10 ** (log_width / 2))
+                x_right = ai * (10 ** (log_width / 2))
+                bar_width = x_right - x_left
+                # color = to_hex(color_map(norm(power)))
+                # print(gpu)
+                slope, peak = emp_roofs[gpu][mem + '_' + op + '_' + data_type]
 
-            if ai < peak / slope:
-                y_patch = [0.05, slope * x_left, slope * x_right, 0.05]
-            else:
-                y_patch = [0.05, peak, peak, 0.05]
-            
-            knee = peak / slope
-            # print(knee)
+                if ai < peak / slope:
+                    y_patch = [0.05, slope * x_left, slope * x_right, 0.05]
+                else:
+                    y_patch = [0.05, peak, peak, 0.05]
+                
+                knee = peak / slope
+                # print(knee)
+                if (perf == df[(df['GPU'] == gpu) & (round(df[f'AI_HBM_{op}_{data_type}']) == round(ai))]['PERF'].max()):
+                    if ai > knee and roofline == False:
+                        x_left = knee
+                        y_patch[1] = peak
+                        prev_xs = scatter_data_power['xs'][-1]
+                        prev_xs[2] = knee
+                        prev_xs[3] = knee
 
-            if ai > knee and roofline == False:
-                x_left = knee
-                y_patch[1] = peak
-                prev_xs = scatter_data['xs'][-1]
-                prev_xs[2] = knee
-                prev_xs[3] = knee
+                        prev_ys = scatter_data_power['ys'][-1]
+                        prev_ys[2] = peak
 
-                prev_ys = scatter_data['ys'][-1]
-                prev_ys[2] = peak
+                        scatter_data_power['xs'][-1] = prev_xs
+                        scatter_data_power['ys'][-1] = prev_ys
 
-                scatter_data['xs'][-1] = prev_xs
-                scatter_data['ys'][-1] = prev_ys
+                        roofline = True
+                    
+                    x_patch = [x_left, x_left, x_right, x_right]
 
-                roofline = True
-            
-            x_patch = [x_left, x_left, x_right, x_right]
+            #     peak, slope = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
+            #     x_intersect = peak / slope
+            #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+            #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+            #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+            #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+            #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+            #     y_slope = [y_slope.min(), y_slope.max()]
+            #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+            #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+            # # print(f'Plotting {mem} {op} {data}...')
+            # # print(f'Slope (Bw): {np.round(slope, 2)}')
 
-        #     peak, slope = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
-        #     x_intersect = peak / slope
-        #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-        #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-        #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-        #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-        #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-        #     y_slope = [y_slope.min(), y_slope.max()]
-        #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-        #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-        # # print(f'Plotting {mem} {op} {data}...')
-        # # print(f'Slope (Bw): {np.round(slope, 2)}')
+            # # Create data sources for the lines
+            #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+            #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
-        # # Create data sources for the lines
-        #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-        #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+            #     # Plot the lines without labels
+            #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+            #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+            #     slope.name = 'roofline'
+            #     peak.name = 'roofline'
 
-        #     # Plot the lines without labels
-        #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-        #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-        #     slope.name = 'roofline'
-        #     peak.name = 'roofline'
-            
-
-            scatter_data["x"].append(float(f"{ai:.10f}"))
-            scatter_data["y"].append(float(f"{perf:.10f}"))
-            scatter_data["op"].append(op)
-            scatter_data["data_type"].append(data_type)
-            scatter_data["gpu"].append(gpu)
-            scatter_data["power"].append(power)
-            scatter_data["xs"].append(x_patch)
-            scatter_data["ys"].append(y_patch)
-            scatter_data["color"].append(None)
-            # scatter_data["slope"].append(slope)
-            # scatter_data["peak"].append(peak)
-            
-            if gpu not in gpu_sources:
-                gpu_sources[gpu] = []
+                
+                    scatter_data_power["x"].append(float(f"{ai:.10f}"))
+                    scatter_data_power["y"].append(float(f"{perf:.10f}"))
+                    scatter_data_power["op"].append(op)
+                    scatter_data_power["data_type"].append(data_type)
+                    scatter_data_power["gpu"].append(gpu)
+                    scatter_data_power["power"].append(power)
+                    scatter_data_power["xs"].append(x_patch)
+                    scatter_data_power["ys"].append(y_patch)
+                    scatter_data_power["color"].append(None)
+                    scatter_data_power["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                    scatter_data_power["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                    scatter_data_power["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                else:
+                    scatter_data["x"].append(float(f"{ai:.10f}"))
+                    scatter_data["y"].append(float(f"{perf:.10f}"))
+                    scatter_data["op"].append(op)
+                    scatter_data["data_type"].append(data_type)
+                    scatter_data["gpu"].append(gpu)
+                    scatter_data["power"].append(power)
+                    # print(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)])
+                    scatter_data["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                    scatter_data["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                    scatter_data["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                # scatter_data["xs"].append(x_patch)
+                # scatter_data["ys"].append(y_patch)
+                # scatter_data["color"].append(None)
+                # scatter_data["M"].append(df[[df['GPU'] == gpu] & [df[f'AI_HBM_{op}_{data_type}'] == ai]])
+                # scatter_data["slope"].append(slope)
+                # scatter_data["peak"].append(peak)
+                
+                if gpu not in gpu_sources:
+                    gpu_sources[gpu] = []
 # print(scatter_data)
 
 for gpu, gpu_df in emp_roofs.items():
@@ -490,16 +590,16 @@ for gpu, gpu_df in emp_roofs.items():
 
     p.add_layout(power_label, 'right')
 
-    for i, gpu_entry in enumerate(scatter_data['gpu']):
+    for i, gpu_entry in enumerate(scatter_data_power['gpu']):
         if gpu_entry == gpu:
-            power = scatter_data['power'][i]
+            power = scatter_data_power['power'][i]
             # if gpu == 'MI300A':
             #     print(power)
             #     print(df[df['GPU'] == 'GPU']['Power'].min())
             #     print(df[df['GPU'] == 'GPU']['Power'].max())
             #     print(to_hex(color_map(norm(power))))
             # print(to_hex(color_map(norm(power))))
-            scatter_data['color'][i] = to_hex(color_map(norm(power)))
+            scatter_data_power['color'][i] = to_hex(color_map(norm(power)))
     
     # mem = key.split('_')[0]
     # op = key.split('_')[1]
@@ -538,18 +638,26 @@ for gpu, gpu_df in emp_roofs.items():
 source_all = ColumnDataSource(data=scatter_data)
 source_full = ColumnDataSource(data=scatter_data)
 
+source_all_power = ColumnDataSource(data=scatter_data_power)
+source_full_power = ColumnDataSource(data=scatter_data_power)
+
 # roofline_all = ColumnDataSource(data=roofline_data)
 # roofline_full = ColumnDataSource(data=roofline_data)
 
 scatter_renderer = p.scatter(
     x="x", y="y", source=source_all,
-    size=12, color='black', marker='circle', visible=False
+    size=6, color='black', marker='circle', visible=False
+)
+
+scatter_renderer_power = p.scatter(
+    x="x", y="y", source=source_all_power,
+    size=6, color='black', marker='circle', visible=False
 )
 
 power_renderer = p.patches(
     xs='xs',
     ys='ys',
-    source=source_all,
+    source=source_all_power,
     fill_color='color',
     fill_alpha=0.7,
     line_color=None,
@@ -559,7 +667,7 @@ power_renderer = p.patches(
 
 hover_tool = HoverTool(
     tooltips=tooltips,
-    renderers=[scatter_renderer],
+    renderers=[scatter_renderer, scatter_renderer_power],
 )
 p.add_tools(hover_tool)
 
@@ -581,7 +689,7 @@ bigger_font_css = """
 """
 
 corner_label = Label(
-    x=20, y=450, x_units='screen', y_units='screen',
+    x=20, y=440, x_units='screen', y_units='screen',
     text='- - - Indicates Peak Theoretical Performance\n—   Indicates Peak Empirical Performance',
     text_font_size='16pt',
     text_color='black',
@@ -603,8 +711,7 @@ callback_code = """
 
         const full_data = source_full.data;
         const filtered = {
-            x: [], y: [], op: [], data_type: [], gpu: [], power: [],
-            xs: [], ys: [], color: []
+            x: [], y: [], op: [], data_type: [], gpu: [], power: [], m: [], n: [], k: []
         };
 
         for (let i = 0; i < full_data.x.length; i++) {
@@ -619,9 +726,9 @@ callback_code = """
                 filtered.data_type.push(full_data.data_type[i]);
                 filtered.gpu.push(full_data.gpu[i]);
                 filtered.power.push(full_data.power[i]);
-                filtered.xs.push(full_data.xs[i]);
-                filtered.ys.push(full_data.ys[i]);
-                filtered.color.push(full_data.color[i]);
+                filtered.m.push(full_data.m[i]);
+                filtered.n.push(full_data.n[i]);
+                filtered.k.push(full_data.k[i]);
             }
         }
 
@@ -631,7 +738,42 @@ callback_code = """
         p.change.emit();
         scatter_renderer.visible = true;
         power_renderer.visible = true;
-        console.log(source_all.data);
+
+        const full_data_power = source_full_power.data;
+        const filtered_power = {
+            x: [], y: [], op: [], data_type: [], gpu: [], power: [],
+            xs: [], ys: [], color: [], m: [], n: [], k: []
+        };
+
+        for (let i = 0; i < full_data_power.x.length; i++) {
+            const op_match = selected_op === null || full_data_power.op[i] === selected_op;
+            const data_match = selected_data === null || full_data_power.data_type[i] === selected_data;
+            const gpu_match = selected_gpu === null || full_data_power.gpu[i] === selected_gpu;
+
+            if (op_match && data_match && gpu_match) {
+                filtered_power.x.push(full_data_power.x[i]);
+                filtered_power.y.push(full_data_power.y[i]);
+                filtered_power.op.push(full_data_power.op[i]);
+                filtered_power.data_type.push(full_data_power.data_type[i]);
+                filtered_power.gpu.push(full_data_power.gpu[i]);
+                filtered_power.power.push(full_data_power.power[i]);
+                filtered_power.xs.push(full_data_power.xs[i]);
+                filtered_power.ys.push(full_data_power.ys[i]);
+                filtered_power.color.push(full_data_power.color[i]);
+                filtered_power.m.push(full_data_power.m[i]);
+                filtered_power.n.push(full_data_power.n[i]);
+                filtered_power.k.push(full_data_power.k[i]);
+            }
+        }
+
+        // Replace the source data with filtered_power view
+        source_all_power.data = filtered_power;
+        source_all_power.change.emit();
+        p.change.emit();
+        scatter_renderer_power.visible = true;
+        power_renderer.visible = true;
+
+        console.log(source_all_power.data);
 
         for (const [gpu, renderers] of Object.entries(gpu_sources)) {
             const gpu_visible = selected_gpu === null || selected_gpu === gpu;
@@ -676,8 +818,8 @@ callback_code = """
     update_visibility();
 """
 # Create the CustomJS callback
-callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes,
-                              gpu_sources=gpu_sources, roofline_sources=roofline_sources, peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, power_renderer=power_renderer, p=p), code=callback_code)
+callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes, gpu_sources=gpu_sources, roofline_sources=roofline_sources, 
+                              peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, source_all_power=source_all_power, source_full_power=source_full_power, scatter_renderer_power=scatter_renderer_power, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
