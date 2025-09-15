@@ -247,7 +247,6 @@ gpu_type_colors = {data: color for data, color in zip(gpus, colors)}
 op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
 
 # Create Bokeh figure
-tooltips = [("AI", "@x"), ("M", "@m"), ("N", "@n"), ("K", "@k"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
 p = figure(x_axis_type='log', y_range=(0.1, 1e4), x_range=(1, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
@@ -314,15 +313,13 @@ gpu_sources = {}
 
 log_width = 0.053
 
-scatter_data_power = {
+scatter_data_gemm = {
     "x": [],
     "y": [],
     "op": [],
     "data_type": [],
     "gpu": [],
     "power": [],
-    "xs": [],
-    "ys": [],
     "color": [],
     "m": [],
     "n": [],
@@ -336,9 +333,9 @@ scatter_data = {
     "data_type": [],
     "gpu": [],
     "power": [],
-    "m": [],
-    "n": [],
-    "k": []
+    "color": [],
+    "xs": [],
+    "ys": []
 }
 
 # roofline_data = {
@@ -462,23 +459,7 @@ for key, gpu_data in kernels.items():
                 
                 knee = peak / slope
                 # print(knee)
-                if (perf == df[(df['GPU'] == gpu) & (round(df[f'AI_HBM_{op}_{data_type}']) == round(ai))]['PERF'].max()):
-                    if ai > knee and roofline == False:
-                        x_left = knee
-                        y_patch[1] = peak
-                        prev_xs = scatter_data_power['xs'][-1]
-                        prev_xs[2] = knee
-                        prev_xs[3] = knee
-
-                        prev_ys = scatter_data_power['ys'][-1]
-                        prev_ys[2] = peak
-
-                        scatter_data_power['xs'][-1] = prev_xs
-                        scatter_data_power['ys'][-1] = prev_ys
-
-                        roofline = True
-                    
-                    x_patch = [x_left, x_left, x_right, x_right]
+                if op == 'GEMM':
 
             #     peak, slope = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
             #     x_intersect = peak / slope
@@ -504,19 +485,34 @@ for key, gpu_data in kernels.items():
             #     peak.name = 'roofline'
 
                 
-                    scatter_data_power["x"].append(float(f"{ai:.10f}"))
-                    scatter_data_power["y"].append(float(f"{perf:.10f}"))
-                    scatter_data_power["op"].append(op)
-                    scatter_data_power["data_type"].append(data_type)
-                    scatter_data_power["gpu"].append(gpu)
-                    scatter_data_power["power"].append(power)
-                    scatter_data_power["xs"].append(x_patch)
-                    scatter_data_power["ys"].append(y_patch)
-                    scatter_data_power["color"].append(None)
-                    scatter_data_power["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
-                    scatter_data_power["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
-                    scatter_data_power["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                    scatter_data_gemm["x"].append(float(f"{ai:.10f}"))
+                    scatter_data_gemm["y"].append(float(f"{perf:.10f}"))
+                    scatter_data_gemm["op"].append(op)
+                    scatter_data_gemm["data_type"].append(data_type)
+                    scatter_data_gemm["gpu"].append(gpu)
+                    scatter_data_gemm["power"].append(power)
+                    scatter_data_gemm["color"].append(None)
+                    # print(gpu, f'AI_HBM_{op}_{data_type}', ai, perf)
+                    scatter_data_gemm["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                    scatter_data_gemm["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                    scatter_data_gemm["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
                 else:
+                    if ai > knee and roofline == False:
+                        x_left = knee
+                        y_patch[1] = peak
+                        prev_xs = scatter_data['xs'][-1]
+                        prev_xs[2] = knee
+                        prev_xs[3] = knee
+
+                        prev_ys = scatter_data['ys'][-1]
+                        prev_ys[2] = peak
+
+                        scatter_data['xs'][-1] = prev_xs
+                        scatter_data['ys'][-1] = prev_ys
+
+                        roofline = True
+                    
+                    x_patch = [x_left, x_left, x_right, x_right]
                     scatter_data["x"].append(float(f"{ai:.10f}"))
                     scatter_data["y"].append(float(f"{perf:.10f}"))
                     scatter_data["op"].append(op)
@@ -524,12 +520,13 @@ for key, gpu_data in kernels.items():
                     scatter_data["gpu"].append(gpu)
                     scatter_data["power"].append(power)
                     # print(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)])
-                    scatter_data["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
-                    scatter_data["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
-                    scatter_data["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
-                # scatter_data["xs"].append(x_patch)
-                # scatter_data["ys"].append(y_patch)
-                # scatter_data["color"].append(None)
+                    # scatter_data["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                    # scatter_data["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                    # scatter_data["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                    scatter_data["xs"].append(x_patch)
+                    scatter_data["ys"].append(y_patch)
+                    scatter_data["color"].append(None)
+
                 # scatter_data["M"].append(df[[df['GPU'] == gpu] & [df[f'AI_HBM_{op}_{data_type}'] == ai]])
                 # scatter_data["slope"].append(slope)
                 # scatter_data["peak"].append(peak)
@@ -539,15 +536,18 @@ for key, gpu_data in kernels.items():
 # print(scatter_data)
 
 for gpu, gpu_df in emp_roofs.items():
-
-    min_power = df[df['GPU'] == gpu]['Power'].min()
+    min_power = 0
     max_power = df[df['GPU'] == gpu]['Power'].max()
-    min_power = min_power
-    max_power = max_power
+    # min_power = min_power
+    # max_power = max_power
+    if gpu == 'H100':
+        max_power = 700
     norm = plt.Normalize(
         min_power,
         max_power,
     )
+    print(gpu, max_power)
+    print(gpu, min_power)
     color_map = LinearSegmentedColormap.from_list(
         'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
     )
@@ -590,16 +590,16 @@ for gpu, gpu_df in emp_roofs.items():
 
     p.add_layout(power_label, 'right')
 
-    for i, gpu_entry in enumerate(scatter_data_power['gpu']):
+    for i, gpu_entry in enumerate(scatter_data_gemm['gpu']):
         if gpu_entry == gpu:
-            power = scatter_data_power['power'][i]
+            power = scatter_data_gemm['power'][i]
             # if gpu == 'MI300A':
             #     print(power)
             #     print(df[df['GPU'] == 'GPU']['Power'].min())
             #     print(df[df['GPU'] == 'GPU']['Power'].max())
             #     print(to_hex(color_map(norm(power))))
             # print(to_hex(color_map(norm(power))))
-            scatter_data_power['color'][i] = to_hex(color_map(norm(power)))
+            scatter_data_gemm['color'][i] = to_hex(color_map(norm(power)))
     
     # mem = key.split('_')[0]
     # op = key.split('_')[1]
@@ -638,26 +638,28 @@ for gpu, gpu_df in emp_roofs.items():
 source_all = ColumnDataSource(data=scatter_data)
 source_full = ColumnDataSource(data=scatter_data)
 
-source_all_power = ColumnDataSource(data=scatter_data_power)
-source_full_power = ColumnDataSource(data=scatter_data_power)
+source_all_gemm = ColumnDataSource(data=scatter_data_gemm)
+source_full_gemm = ColumnDataSource(data=scatter_data_gemm)
 
 # roofline_all = ColumnDataSource(data=roofline_data)
 # roofline_full = ColumnDataSource(data=roofline_data)
 
 scatter_renderer = p.scatter(
     x="x", y="y", source=source_all,
+    fill_alpha=0.5,
     size=6, color='black', marker='circle', visible=False
 )
 
-scatter_renderer_power = p.scatter(
-    x="x", y="y", source=source_all_power,
-    size=6, color='black', marker='circle', visible=False
+scatter_renderer_gemm = p.scatter(
+    x="x", y="y", source=source_all_gemm,
+    fill_alpha=0.5,
+    size=6, color="color", marker='circle', visible=False
 )
 
 power_renderer = p.patches(
     xs='xs',
     ys='ys',
-    source=source_all_power,
+    source=source_all,
     fill_color='color',
     fill_alpha=0.7,
     line_color=None,
@@ -665,11 +667,20 @@ power_renderer = p.patches(
     visible=False
 )
 
+tooltips_gemm = [("AI", "@x"), ("M", "@m"), ("N", "@n"), ("K", "@k"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
+hover_tool_gemm = HoverTool(
+    tooltips=tooltips_gemm,
+    renderers=[scatter_renderer_gemm],
+)
+
+tooltips = [("AI", "@x"), ("Performance", "@y TFLOPS/sec"), ("Operation", "@op"), ("Data Type", "@data_type"), ("Power", "@power W")]
 hover_tool = HoverTool(
     tooltips=tooltips,
-    renderers=[scatter_renderer, scatter_renderer_power],
+    renderers=[scatter_renderer],
 )
+
 p.add_tools(hover_tool)
+p.add_tools(hover_tool_gemm)
 
 # Create CheckboxGroups for Operation Types and Data Types with no active selections
 op_checkboxes = RadioGroup(labels=[op for op in op_types], active=0)
@@ -711,7 +722,7 @@ callback_code = """
 
         const full_data = source_full.data;
         const filtered = {
-            x: [], y: [], op: [], data_type: [], gpu: [], power: [], m: [], n: [], k: []
+            x: [], y: [], op: [], data_type: [], gpu: [], power: [], xs: [], ys: [], color: []
         };
 
         for (let i = 0; i < full_data.x.length; i++) {
@@ -726,9 +737,9 @@ callback_code = """
                 filtered.data_type.push(full_data.data_type[i]);
                 filtered.gpu.push(full_data.gpu[i]);
                 filtered.power.push(full_data.power[i]);
-                filtered.m.push(full_data.m[i]);
-                filtered.n.push(full_data.n[i]);
-                filtered.k.push(full_data.k[i]);
+                filtered.xs.push(full_data.xs[i]);
+                filtered.ys.push(full_data.ys[i]);
+                filtered.color.push(full_data.color[i]);
             }
         }
 
@@ -739,41 +750,39 @@ callback_code = """
         scatter_renderer.visible = true;
         power_renderer.visible = true;
 
-        const full_data_power = source_full_power.data;
-        const filtered_power = {
+        const full_data_gemm = source_full_gemm.data;
+        const filtered_gemm = {
             x: [], y: [], op: [], data_type: [], gpu: [], power: [],
-            xs: [], ys: [], color: [], m: [], n: [], k: []
+            color: [], m: [], n: [], k: []
         };
 
-        for (let i = 0; i < full_data_power.x.length; i++) {
-            const op_match = selected_op === null || full_data_power.op[i] === selected_op;
-            const data_match = selected_data === null || full_data_power.data_type[i] === selected_data;
-            const gpu_match = selected_gpu === null || full_data_power.gpu[i] === selected_gpu;
+        for (let i = 0; i < full_data_gemm.x.length; i++) {
+            const op_match = selected_op === null || full_data_gemm.op[i] === selected_op;
+            const data_match = selected_data === null || full_data_gemm.data_type[i] === selected_data;
+            const gpu_match = selected_gpu === null || full_data_gemm.gpu[i] === selected_gpu;
 
             if (op_match && data_match && gpu_match) {
-                filtered_power.x.push(full_data_power.x[i]);
-                filtered_power.y.push(full_data_power.y[i]);
-                filtered_power.op.push(full_data_power.op[i]);
-                filtered_power.data_type.push(full_data_power.data_type[i]);
-                filtered_power.gpu.push(full_data_power.gpu[i]);
-                filtered_power.power.push(full_data_power.power[i]);
-                filtered_power.xs.push(full_data_power.xs[i]);
-                filtered_power.ys.push(full_data_power.ys[i]);
-                filtered_power.color.push(full_data_power.color[i]);
-                filtered_power.m.push(full_data_power.m[i]);
-                filtered_power.n.push(full_data_power.n[i]);
-                filtered_power.k.push(full_data_power.k[i]);
+                filtered_gemm.x.push(full_data_gemm.x[i]);
+                filtered_gemm.y.push(full_data_gemm.y[i]);
+                filtered_gemm.op.push(full_data_gemm.op[i]);
+                filtered_gemm.data_type.push(full_data_gemm.data_type[i]);
+                filtered_gemm.gpu.push(full_data_gemm.gpu[i]);
+                filtered_gemm.power.push(full_data_gemm.power[i]);
+                filtered_gemm.color.push(full_data_gemm.color[i]);
+                filtered_gemm.m.push(full_data_gemm.m[i]);
+                filtered_gemm.n.push(full_data_gemm.n[i]);
+                filtered_gemm.k.push(full_data_gemm.k[i]);
             }
         }
 
-        // Replace the source data with filtered_power view
-        source_all_power.data = filtered_power;
-        source_all_power.change.emit();
+        // Replace the source data with filtered_gemm view
+        source_all_gemm.data = filtered_gemm;
+        source_all_gemm.change.emit();
         p.change.emit();
-        scatter_renderer_power.visible = true;
+        scatter_renderer_gemm.visible = true;
         power_renderer.visible = true;
 
-        console.log(source_all_power.data);
+        console.log(source_all_gemm.data);
 
         for (const [gpu, renderers] of Object.entries(gpu_sources)) {
             const gpu_visible = selected_gpu === null || selected_gpu === gpu;
@@ -819,7 +828,7 @@ callback_code = """
 """
 # Create the CustomJS callback
 callback = CustomJS(args=dict(op_checkboxes=op_checkboxes, data_checkboxes=data_checkboxes, gpu_checkboxes=gpu_checkboxes, gpu_sources=gpu_sources, roofline_sources=roofline_sources, 
-                              peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, source_all_power=source_all_power, source_full_power=source_full_power, scatter_renderer_power=scatter_renderer_power, power_renderer=power_renderer, p=p), code=callback_code)
+                              peak_roofline_sources=peak_roofline_sources, source_all=source_all, source_full=source_full, scatter_renderer=scatter_renderer, source_all_gemm=source_all_gemm, source_full_gemm=source_full_gemm, scatter_renderer_gemm=scatter_renderer_gemm, power_renderer=power_renderer, p=p), code=callback_code)
 
 # Attach the callback to the 'active' property change
 op_checkboxes.js_on_change('active', callback)
