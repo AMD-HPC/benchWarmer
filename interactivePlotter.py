@@ -93,7 +93,7 @@ theo_perf['A100'] = 19.5
 for gpu in gpus:
     for op in ops:
         for data in data_types:
-            print(gpu, op, data)
+            # print(gpu, op, data)
             theo_peak_bw[gpu][op][data] = theo_bw[gpu]
 
 for gpu in gpus:
@@ -230,7 +230,7 @@ for gpu in gpus:
                 col = 'AI_' + mem + '_' + op + '_' + data
                 if col in gpu_df:
                     ai_df = gpu_df[gpu_df[col] != 0]
-                    print(op, data, gpu, ai_df['PERF'].max())
+                    # print(op, data, gpu, ai_df['PERF'].max())
                     emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
                     theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu][op][data], theo_peak_perf[gpu][op][data])
 
@@ -492,7 +492,7 @@ for key, gpu_data in kernels.items():
                     scatter_data_gemm["gpu"].append(gpu)
                     scatter_data_gemm["power"].append(power)
                     scatter_data_gemm["color"].append(None)
-                    # print(gpu, f'AI_HBM_{op}_{data_type}', ai, perf)
+                    # print(gpu, ai, perf)
                     scatter_data_gemm["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
                     scatter_data_gemm["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
                     scatter_data_gemm["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
