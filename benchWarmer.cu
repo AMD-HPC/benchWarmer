@@ -490,23 +490,23 @@ static void bench_func(bool rocstar, bool record) {
   stats(durations, numExperiments, &meanDuration, &stdevDuration, &confidenceDuration);
   std::string target_col = " ";
 	float *AI_HBM = nullptr;
-  if (s.find("MulAdd") != std::string::npos) {
-	// printf("Found MulAdd in Func name!");
-	AI_HBM = AI_HBM_MULADD;
-	target_col = "AI_HBM_MULADD";
-  } else if (s.find("Mul") != std::string::npos) {
-    AI_HBM = AI_HBM_MUL;
-	target_col = "AI_HBM_MUL";
-  } else if (s.find("Add") != std::string::npos) {
-	AI_HBM = AI_HBM_ADD;
-	target_col = "AI_HBM_ADD";
-  } else if (s.find("Div") != std::string::npos) {
-    AI_HBM = AI_HBM_DIV;
-	target_col = "AI_HBM_DIV";
-  } else if (s.find("Rsqrt") != std::string::npos) {
-    AI_HBM = AI_HBM_RSQ;
-	target_col = "AI_HBM_RSQ";
-  }
+//   if (s.find("MulAdd") != std::string::npos) {
+// 	// printf("Found MulAdd in Func name!");
+// 	AI_HBM = AI_HBM_MULADD;
+// 	target_col = "AI_HBM_MULADD";
+//   } else if (s.find("Mul") != std::string::npos) {
+//     AI_HBM = AI_HBM_MUL;
+// 	target_col = "AI_HBM_MUL";
+//   } else if (s.find("Add") != std::string::npos) {
+// 	AI_HBM = AI_HBM_ADD;
+// 	target_col = "AI_HBM_ADD";
+//   } else if (s.find("Div") != std::string::npos) {
+//     AI_HBM = AI_HBM_DIV;
+// 	target_col = "AI_HBM_DIV";
+//   } else if (s.find("Rsqrt") != std::string::npos) {
+//     AI_HBM = AI_HBM_RSQ;
+// 	target_col = "AI_HBM_RSQ";
+//   }
 
 	// std::string typeName = typeid(T).name();
 	float AI = (float)totalFlops / (float)totalBytes;
@@ -539,42 +539,11 @@ static void bench_func(bool rocstar, bool record) {
 		csvFile.open("/home/khoffmey/work/PubBench/" + filename, std::ios::app);  // Open in append mode
 		if (csvFile.is_open()) {
 			if (fileIsEmpty) {
-				csvFile << "Kernel,GPU,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,bandwidth,";
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_ADD_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_MUL_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_MULADD_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_DIV_" << opMap[i] << ",";
-				}
-				for (int i = 0; i < 7; ++i) {
-					csvFile << "AI_HBM_RSQ_" << opMap[i] << ",";
-				}
-				csvFile << "AverageSec,PERF,STDDEV,CI\n";
+				csvFile << "Kernel,GPU,DATA,OP,AI,gridSize,blockSize,nThreads,Length,Iterations,experiments,GFLOPS,totalBytes,bandwidth,AverageSec,PERF,STDDEV,CI\n";
 			}
 			float bandwidth = (static_cast<float>(totalBytes) / 1000000000) / (meanDuration / 1000);
-			csvFile << "Test," << GPU << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
+			csvFile << "Test," << GPU << "," << datatype << "," << op << "," << AI << "," << workgroupSize << "," << numWorkgroups << "," << nThreads << "," << nSize << "," << nOps << ","
 							<< numExperiments << "," << float(totalFlops) / 1000000000 << "," << totalBytes << "," << bandwidth << ",";
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_ADD[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_MUL[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_MULADD[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_DIV[i] << ",";
-			}
-			for (int i = 0; i < 7; ++i) {
-				csvFile << AI_HBM_RSQ[i] << ",";
-			}
 			csvFile << meanDuration << "," << meanThroughput << "," << stdevThroughput << "," << confidenceThroughput << "\n";
 			csvFile.close();
 			printf("Results written to %s\n", filename.c_str());

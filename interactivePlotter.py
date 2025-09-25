@@ -3,6 +3,7 @@ import numpy as np
 import math
 import argparse
 import os
+import matplotlib
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mtick
 import plotly.graph_objects as go
@@ -13,7 +14,7 @@ from bokeh.models import LinearColorMapper, ColorBar, BasicTicker, Title, Label
 from bokeh.models import ColumnDataSource, CheckboxGroup, Button, FixedTicker, LogScale, LinearScale, CustomJS, Range1d, DataRange1d, Spacer
 from bokeh.models.widgets import RadioButtonGroup, RadioGroup
 from bokeh.models.axes import LinearAxis
-from bokeh.layouts import column, row
+import bokeh.layouts as bl
 from bokeh.io import curdoc
 from plotly.subplots import make_subplots
 from matplotlib.lines import Line2D
@@ -21,42 +22,75 @@ from matplotlib.patches import Patch
 from matplotlib.colors import to_hex, LinearSegmentedColormap, to_rgba
 from bokeh.io import output_file
 from bokeh.models import HoverTool
+import glob
 
 # Get filenames from input args
 parser = argparse.ArgumentParser()
-parser.add_argument('-r', '--results', required=False, help='Provide runtimes.csv filename')
-parser.add_argument('-e', '--emp', required=False, help='Provide empirical roofline filename')
-parser.add_argument('-g', '--gpu', required=True, help='Name of GPU')
-parser.add_argument('-d', '--datatypes', required=True, help='Data types you want to plot (ex. F32, F64). Provide in space separated format')
-parser.add_argument('-hw', '--hardware', required=False, help='Provide directory to hardware metrics you want to plot (ex. Power, Frequency).')
-parser.add_argument('-m', '--memory', required=True, help='Memory types you want to plot (ex. L2, HBM). Provide in space separated format')
-parser.add_argument('-o', '--operations', required=False, help='Operations you want to plot (ex. ADD, MUL). Provide in space separated format')
+parser.add_argument('--results', required=True, help='Provide runtimes.csv filename')
+parser.add_argument('--rocstar', required=False, help='Provide rocstar directory')
 parser.add_argument('-f', '--filename', required=True, help='Filename which you want the plot to be')
 
 args = parser.parse_args()
-
+#AI, DATA, OP
 print('Parsing arguments...')
-data_types = args.datatypes.split()
-ops = args.operations.split()
 
-print(data_types)
-print(ops)
 
-if args.results:
-    df = pd.read_csv(args.results)
-    df['Power'] = df['Power'].fillna(0)
-    df['PERF'] = df['PERF'] / 1000
-    # df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
-    # Consolidate rows for GPU 'MI250X_two_gcd'
-    if 'MI250X_two_gcd' in df['GPU'].values:
-        ai_cols = [col for col in df.columns if 'AI_' in col]
-        df_grouped = df[df['GPU'] == 'MI250X_two_gcd'].groupby(['Iterations'] + ai_cols, as_index=False).agg(
-            {col: 'first' if col != 'PERF' else 'sum' for col in df.columns if col not in ['Iterations'] + ai_cols}
-        )
-        df = pd.concat([df[df['GPU'] != 'MI250X_two_gcd'], df_grouped], ignore_index=True)
-    df['GPU'] = df['GPU'].replace({'MI250X_two_gcd': 'MI250X (2 GCDs)'})
+df = pd.read_csv(args.results) 
+
+
+df['PERF'] = df['PERF'] / 1000
+df['DATA'] = df['DATA'].str.upper()
+df['OP'] = df['OP'].str.upper()
+data_types = df['DATA'].unique()
+op_types = df['OP'].unique()
+gpus = df['GPU'].unique()
+rocstar_dir = args.rocstar
+print(f'Data Types: {data_types}')
+print(f'Operations: {op_types}')
+if rocstar_dir:
+    print(f'rocstar directory: {rocstar_dir}')
 else:
-    print('No runtimes file provided.')
+    print('No rocstar directory provided.')
+filename = args.filename
+print('Parsing complete.')
+
+
+
+if rocstar_dir:
+    print('Parsing power metrics')
+    if 'Power' not in df.columns:
+        df['Power'] = None
+    for _, row in df.iterrows():
+        gpu = row['GPU']
+        iterations = row['Iterations']
+        data_type = row['DATA']
+        op_type = row['OP']
+        file = f'{rocstar_dir}/{gpu}/hw_metrics_{iterations}_{op_type.lower()}_{data_type.lower()}.csv'
+        power_df = pd.read_csv(file)
+        power_df.columns = power_df.columns.str.strip()
+        if power_df.empty:
+            print(f'Power metrics file is empty: {file}')
+            exit(1)
+        max_power = power_df['Power[W]'].max()
+        df.loc[row.name, 'Power'] = max_power
+    print('Parsed power metrics')
+
+if 'Power' not in df.columns:
+    print("Power values are missing. Pass in directory to power values")
+    exit(1)
+df['Power'] = df['Power'].astype(float)
+df['Power'] = df['Power'].fillna(0)
+# df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
+# Consolidate rows for GPU 'MI250X_two_gcd'
+if 'MI250X_two_gcd' in df['GPU'].values:
+    ai_cols = [col for col in df.columns if 'AI_' in col]
+    df_grouped = df[df['GPU'] == 'MI250X_two_gcd'].groupby(['Iterations'] + ['OP'] + ['DATA'] + ['AI'], as_index=False).agg(
+        {col: 'sum' if col in ['PERF', 'POWER'] else 'first' for col in df.columns if col}
+    )
+    df = pd.concat([df[df['GPU'] != 'MI250X_two_gcd'], df_grouped], ignore_index=True)
+df['GPU'] = df['GPU'].replace({'MI250X_two_gcd': 'MI250X (2 GCDs)'})
+
+df = df.sort_values(by='AI')
 
 peak_bw = {}
 
@@ -91,13 +125,13 @@ theo_perf['MI300A'] = 122.6
 theo_perf['A100'] = 19.5
 
 for gpu in gpus:
-    for op in ops:
+    for op in op_types:
         for data in data_types:
             # print(gpu, op, data)
             theo_peak_bw[gpu][op][data] = theo_bw[gpu]
 
 for gpu in gpus:
-    for op in ops:
+    for op in op_types:
         for data in data_types:
             theo_peak_perf[gpu][op][data] = theo_perf[gpu]
 
@@ -108,146 +142,43 @@ theo_peak_perf['H100']['GEMM']['FP8'] = 1978.9
 theo_peak_perf['MI300X']['GEMM']['FP32'] = 163.4
 theo_peak_perf['MI300X']['GEMM']['BF16'] = 1307.4
 theo_peak_perf['MI300X']['GEMM']['FP8'] = 2614.9
-# theo_peak_perf['H100']['GEMM']['BF16'] = 989.4
 
+kernels = defaultdict(lambda: defaultdict(lambda: defaultdict(lambda: defaultdict(list))))
+emp_roofs = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
+theo_emp_roofs = defaultdict(lambda: defaultdict(lambda: defaultdict(dict)))
 
+print('Gathering runtime data')
 
-# theo_peak_bw['H100'] = 3.35
-# theo_peak_bw['MI300X'] = 5.3
-# theo_peak_bw['MI250X (2 GCDs)'] = 3.2
-# theo_peak_bw['MI250X'] = 1.6
-# theo_peak_bw['MI300A'] = 5.3
-# theo_peak_bw['A100'] = 1.555
+for _, row in df.iterrows():
+    subset_df = df[(df['GPU'] == row['GPU']) & (df['OP'] == row['OP']) & (df['DATA'] == row['DATA'])]
+    gpu = row['GPU']
+    op = row['OP']
+    data = row['DATA']
+    ai = row['AI']
+    perf = row['PERF']
+    power = row['Power']
+    if gpu == 'MI250X_two_gcd':
+        kernels[gpu][op][data][ai][0] += ((perf, power))
+    else:
+        kernels[gpu][op][data][ai].append((perf, power))
+    emp_roofs[gpu][op][data] = (peak_bw[gpu], subset_df['PERF'].max())
+    theo_emp_roofs[gpu][op][data] = (theo_peak_bw[gpu][op][data], theo_peak_perf[gpu][op][data])
 
-# theo_peak_perf['H100'] = 66.9
-# theo_peak_perf['MI300X'] = 163.4
-# theo_peak_perf['MI250X (2 GCDs)'] = 90.5
-# theo_peak_perf['MI250X'] = 45.25
-# theo_peak_perf['MI300A'] = 122.6
-# theo_peak_perf['A100'] = 19.5
-
-
-# df = df[~(df.filter(like='GEMM').gt(0).any(axis=1))]
-
-# if args.emp:
-#     roof_df = pd.read_csv(args.emp)
-gpu_name = args.gpu
-data_types = args.datatypes.split()
-op_types = args.operations.split()
-mem_types = args.memory.split()
-hw_metrics_dir = args.hardware
-n_threads=7471104
-filename = args.filename
-print('Parsing complete.')
-
-# Reorganize memory types
-order=['LDS', 'L1', 'L2', 'HBM']
-mem_types = [mem for mem in order if mem in mem_types]
-
-if args.hardware:
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(24, 12))
-else:
-    fig, ax1 = plt.subplots(1, 1, figsize=(24, 12))
-
-# Extract roofline data into dictionary for easier access
-# print('Gathering empirical roofline data...')
-# gpus = df['GPU'].unique()
-# emp_roofs = {}
-# # if args.emp:
-# # for data in data_types:
-# #     for mem in mem_types:
-# slope = roof_df['HBMBw'].mean() / 1000
-# peak = roof_df['MFMAF32Flops'].mean() / 1000
-# # if 'pubbench' in args.results:
-# #     if df['PERF'].max() > peak:
-# #         peak = df['PERF'].max() / 1000
-# for gpu in gpus:
-#     emp_roofs[gpu] = (slope, peak)
-# print('Data gathered.')
-
-# for gpu in gpus:
-#     slope = (df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['PERF'] / df[(df['GPU'] == gpu) & (df['AI_HBM_MULADD_FP32'] != 0)]['AI_HBM_MULADD_FP32']).max()
-#     peak = df[df['GPU'] == gpu]['PERF'].max()
-#     emp_roofs[gpu] = (slope, peak)
-#     emp_roofs[gpu]
-
-# elif args.create:
-#     print('Creating new rooflines...')
-kernels = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
-if args.results:
-    ai_cols = [c for c in df.columns if 'AI_' in c]
-    for data in data_types:
-        ai_data_cols = [c for c in ai_cols if data == c.split('_')[-1]]
-        for op in op_types:
-            ai_data_op_cols = [c for c in ai_data_cols if op == c.split('_')[-2]]
-            for mem in mem_types:
-                if ai_data_op_cols:
-                    ai_data_op_mem_col = [c for c in ai_data_op_cols if mem == c.split('_')[-3]][0]
-                    # print(op, data, ai_data_op_mem_cols)
-                    # print(ai_data_op_mem_cols)
-                    df_subset = df[df[ai_data_op_mem_col] != 0]
-                    for _, row_data in df_subset.iterrows():
-                        gpu = row_data['GPU']
-                        ai_value = row_data[ai_data_op_mem_col]
-                        perf_value = row_data['PERF']
-                        # m = row_data['M']
-                        # n = row_data['M']
-                        # k = row_data['M']
-                        # if 'RSQ' in ai_data_op_mem_col:
-                        #     perf_value *= 1.5
-                        #     ai_value *= 0.75
-                        power_value = row_data['Power']
-                        if gpu == 'MI250X_two_gcd':
-                            existing_perf, existing_power = kernels[mem + '_' + op + '_' + data][gpu][ai_value]
-                            kernels[mem + '_' + op + '_' + data][gpu][ai_value][0] += (existing_perf + perf_value, existing_power)
-                        else:
-                            # if op == 'GEMM':
-                                # print(ai_value, ai_data_op_mem_col)
-                            kernels[mem + '_' + op + '_' + data][gpu][ai_value].append((perf_value, power_value))
-                            # kernels[mem + '_' + op + '_' + data][gpu][ai_value]
-                            
-                            # d = kernels[mem + '_' + op + '_' + data][gpu]
-
-                            # # Sort the items by key and reconstruct as defaultdict(list)
-                            # sorted_d = defaultdict(list, sorted(d.items()))
-
-                            # # Overwrite the original dictionary
-                            # kernels[mem + '_' + op + '_' + data][gpu] = sorted_d
-
-
-# for data in data_types:
-#     for op in op_types:
-#         for mem in mem_types:
-#             for gpu in gpus:
-#                 kernels[mem + '_' + op + '_' + data][gpu][ai_value]
-emp_roofs = defaultdict(lambda: defaultdict(dict))
-theo_emp_roofs = defaultdict(lambda: defaultdict(dict))
-for gpu in gpus:
-    gpu_df = df[df['GPU'] == gpu]
-    for mem in mem_types:
-        for op in op_types:
-            for data in data_types:
-                col = 'AI_' + mem + '_' + op + '_' + data
-                if col in gpu_df:
-                    ai_df = gpu_df[gpu_df[col] != 0]
-                    # print(op, data, gpu, ai_df['PERF'].max())
-                    emp_roofs[gpu][mem + '_' + op + '_' + data] = (peak_bw[gpu], ai_df['PERF'].max())
-                    theo_emp_roofs[gpu][mem + '_' + op + '_' + data] = (theo_peak_bw[gpu][op][data], theo_peak_perf[gpu][op][data])
+print('Gathered runtime data')
 
 print('Plotting rooflines...')
 
 AI = np.logspace(-2, 6, 10000)
 
-# Define colors and markers
-colors = ['blue', 'green', 'red', 'purple', 'orange', 'brown', 'pink', 'gray', 'cyan', 'magenta']
-markers = ['circle', 'square', 'triangle', 'diamond', 'inverted_triangle', 'hex', 'cross', 'asterisk']
-gpus = df['GPU'].unique()
-data_type_colors = {data: color for data, color in zip(data_types, colors)}
-gpu_type_colors = {data: color for data, color in zip(gpus, colors)}
-op_type_markers = {op: marker for op, marker in zip(op_types, markers)}
-
 # Create Bokeh figure
-p = figure(x_axis_type='log', y_range=(0.1, 1e4), x_range=(1, 1e5), y_axis_type='log', title='Empirical Rooflines with Power',
+
+# round to nearest power of 10
+lowest_ai = df['AI'].min()
+highest_ai = df['AI'].max()
+x_min = 10 ** np.floor(np.log10(lowest_ai))
+x_max = 10 ** np.ceil(np.log10(highest_ai))
+
+p = figure(x_axis_type='log', y_range=(0.1, 1e4), x_range=(x_min, x_max), y_axis_type='log', title='Empirical Rooflines with Power',
            x_axis_label='Arithmetic Intensity (FLOPs/Byte)', toolbar_location="right",
            y_axis_label='Performance (TFLOPs/sec)', tools='wheel_zoom,box_zoom,reset,save', width=900, height=600)
 p.title.text_font_size = '14pt'
@@ -258,60 +189,11 @@ p.yaxis.major_label_text_font_size = '14pt'
 
 p.toolbar_location = None
 
-# Create a toolbar box manually (you can also use p.toolbar as the toolbar itself)
-# toolbar = Toolbar(toolbar=p.toolbar, toolbar_location="right")
-# Dictionaries to hold references to the plotted lines
 roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 peak_roofline_sources = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 gpu_sources = {}
 
-# min_power = 200
-# max_power = df['Power'].max()
-# norm = plt.Normalize(
-#     min_power,
-#     max_power,
-# )
-# color_map = LinearSegmentedColormap.from_list(
-#     'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
-# )
-
-# # Convert to a hex palette
-# rgba_colors = [to_rgba(color_map(i / 255), alpha=0.7) for i in range(256)]  # 0.3 = 30% opacity
-# hex_colors_with_alpha = [f'#{int(r*255):02x}{int(g*255):02x}{int(b*255):02x}{int(a*255):02x}' 
-#                          for r, g, b, a in rgba_colors]
-
-# # Create Bokeh color mapper
-# color_mapper = LinearColorMapper(palette=hex_colors_with_alpha, low=min_power, high=max_power)
-
-# # Add the color bar
-# color_bar = ColorBar(
-#     color_mapper=color_mapper,
-#     ticker=BasicTicker(),
-#     label_standoff=12,
-#     border_line_color=None,
-#     location=(0, 0)
-# )
-
-# p.add_layout(color_bar, 'right')
-
-# y_axis_style = {
-#     "text_font": p.yaxis[0].axis_label_text_font,
-#     "text_font_size": p.yaxis[0].axis_label_text_font_size,
-#     "text_font_style": p.yaxis[0].axis_label_text_font_style,
-#     "text_color": p.yaxis[0].axis_label_text_color,
-# }
-
-# power_label = Title(
-#     text='Power (W)',
-#     text_font=y_axis_style["text_font"],
-#     text_font_size=y_axis_style["text_font_size"],
-#     text_font_style=y_axis_style["text_font_style"],
-#     text_color=y_axis_style["text_color"],
-#     offset=45
-# )
-# p.add_layout(power_label, 'right')
-
-log_width = 0.053
+log_width = 0.303
 
 scatter_data_gemm = {
     "x": [],
@@ -338,202 +220,151 @@ scatter_data = {
     "ys": []
 }
 
-# roofline_data = {
-#     "op": [],
-#     "data_type": [],
-#     "slope": [],
-#     "peak": []
-# }
-
-for key, gpu_data in kernels.items():
+for gpu, gpu_dict in kernels.items():
     # print(max([values[-1].max() for values in kernels.values()]))
-    mem, op, data_type = key.split('_')
-    marker = op_type_markers[op]
+    for op_type, op_dict in gpu_dict.items():
+        for data_type, data_info in op_dict.items():
+            # color = gpu_type_colors[gpu]
+            y_range = p.y_range
+            # color_map = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
+            roofline = False
+            slope, peak = emp_roofs[gpu][op_type][data_type]
+            x_intersect = peak / slope
 
-    for gpu, ai_data in gpu_data.items():
-        # color = gpu_type_colors[gpu]
-        y_range = p.y_range
-        # color_map = plt.cm.ScalarMappable(cmap='hsv', norm=norm)
-        roofline = False
-        slope, peak = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
-        x_intersect = peak / slope
-        x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-        x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-        x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-        x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-        y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-        y_slope = [y_slope.min(), y_slope.max()]
-        y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-        y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-    # print(f'Plotting {mem} {op} {data}...')
-    # print(f'Slope (Bw): {np.round(slope, 2)}')
+            x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+            x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+            x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+            x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+            y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+            y_slope = [y_slope.min(), y_slope.max()]
+            y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+            y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+        # print(f'Plotting {mem} {op} {data}...')
+        # print(f'Slope (Bw): {np.round(slope, 2)}')
 
-    # Create data sources for the lines
-        source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-        source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+        # Create data sources for the lines
+            source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+            source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
-        # Plot the lines without labels
-        slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', visible=False)
-        slope_line.name = 'roofline'
-        peak_line.name = 'roofline'
+            # Plot the lines without labels
+            slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
+            peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', visible=False)
+            slope_line.name = 'roofline'
+            peak_line.name = 'roofline'
 
-        # roofline_data = {}
+            # roofline_data = {}
 
-        # roofline_data["slope"].append(slope)
-        # roofline_data["peak"].append(peak)
+            # roofline_data["slope"].append(slope)
+            # roofline_data["peak"].append(peak)
 
-        roofline_sources[gpu][op][data_type].append(slope_line)
-        roofline_sources[gpu][op][data_type].append(peak_line)
+            roofline_sources[gpu][op_type][data_type].append(slope_line)
+            roofline_sources[gpu][op_type][data_type].append(peak_line)
 
-        slope, peak = theo_emp_roofs[gpu]['HBM_' + op + '_' + data_type]
-        x_intersect = peak / slope
-        x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-        x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-        x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-        x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-        y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-        y_slope = [y_slope.min(), y_slope.max()]
-        y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-        y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-    # print(f'Plotting {mem} {op} {data}...')
-    # print(f'Slope (Bw): {np.round(slope, 2)}')
+            slope, peak = theo_emp_roofs[gpu][op_type][data_type]
+            x_intersect = peak / slope
+            x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
+            x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
+            x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
+            x_horizontal = [x_horizontal.min(), x_horizontal.max()]
+            y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
+            y_slope = [y_slope.min(), y_slope.max()]
+            y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
+            y_horizontal = [y_horizontal.min(), y_horizontal.max()]
+        # print(f'Plotting {mem} {op} {data}...')
+        # print(f'Slope (Bw): {np.round(slope, 2)}')
 
-    # Create data sources for the lines
-        source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-        source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
+        # Create data sources for the lines
+            source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
+            source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
 
-        # Plot the lines without labels
-        slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', line_dash='dashed', visible=False)
-        peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-        slope_line.name = 'roofline'
-        peak_line.name = 'roofline'
+            # Plot the lines without labels
+            slope_line = p.line('x', 'y', source=source_slope, line_width=2, color='black', line_dash='dashed', visible=False)
+            peak_line = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
+            slope_line.name = 'roofline'
+            peak_line.name = 'roofline'
 
-        # roofline_data = {}
+            # roofline_data = {}
 
-        # roofline_data["slope"].append(slope)
-        # roofline_data["peak"].append(peak)
+            # roofline_data["slope"].append(slope)
+            # roofline_data["peak"].append(peak)
 
-        peak_roofline_sources[gpu][op][data_type].append(slope_line)
-        peak_roofline_sources[gpu][op][data_type].append(peak_line)
+            peak_roofline_sources[gpu][op_type][data_type].append(slope_line)
+            peak_roofline_sources[gpu][op_type][data_type].append(peak_line)
+            for ai, data in data_info.items():
+                for perf, power in data:
+                    # Create source with all data including power
+                    x_left = ai / (10 ** (log_width / 2))
+                    x_right = ai * (10 ** (log_width / 2))
+                    bar_width = x_right - x_left
+                    # color = to_hex(color_map(norm(power)))
+                    # print(gpu)
+                    slope, peak = emp_roofs[gpu][op_type][data_type]
 
-        # roofline_sources[gpu][op][data_type] = {
-        #     "figure": p,
-        #     "renderers": [slope_line, peak_line]
-        # }
-        
-
-        # for data_type, entry in roofline_sources[gpu][op].items():
-        #     # print(entry)
-        #     p = entry["figure"]
-        #     for line in entry["renderers"]:
-        #         hover = HoverTool(
-        #             renderers=[line],
-        #             tooltips=[
-        #                 ("AI", "@x"),
-        #                 ("Performance", "@y TFLOPS/sec"),
-        #             ]
-        #         )
-        #         p.add_tools(hover)
-        
-        
-        # roofline_data["peak"].append(peak)
-        # roofline_data["op"].append(op)
-        # roofline_data["data_type"].append(data_type)
-        # roofline_data["gpu"].append(gpu)
-        
-        for ai, data in ai_data.items():
-            for perf, power in data:
-                # Create source with all data including power
-                x_left = ai / (10 ** (log_width / 2))
-                x_right = ai * (10 ** (log_width / 2))
-                bar_width = x_right - x_left
-                # color = to_hex(color_map(norm(power)))
-                # print(gpu)
-                slope, peak = emp_roofs[gpu][mem + '_' + op + '_' + data_type]
-
-                if ai < peak / slope:
-                    y_patch = [0.05, slope * x_left, slope * x_right, 0.05]
-                else:
-                    y_patch = [0.05, peak, peak, 0.05]
-                
-                knee = peak / slope
-                # print(knee)
-                if op == 'GEMM':
-
-            #     peak, slope = emp_roofs[gpu]['HBM_' + op + '_' + data_type]
-            #     x_intersect = peak / slope
-            #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-            #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-            #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-            #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-            #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-            #     y_slope = [y_slope.min(), y_slope.max()]
-            #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-            #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-            # # print(f'Plotting {mem} {op} {data}...')
-            # # print(f'Slope (Bw): {np.round(slope, 2)}')
-
-            # # Create data sources for the lines
-            #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-            #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
-
-            #     # Plot the lines without labels
-            #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-            #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-            #     slope.name = 'roofline'
-            #     peak.name = 'roofline'
-
-                
-                    scatter_data_gemm["x"].append(float(f"{ai:.10f}"))
-                    scatter_data_gemm["y"].append(float(f"{perf:.10f}"))
-                    scatter_data_gemm["op"].append(op)
-                    scatter_data_gemm["data_type"].append(data_type)
-                    scatter_data_gemm["gpu"].append(gpu)
-                    scatter_data_gemm["power"].append(power)
-                    scatter_data_gemm["color"].append(None)
-                    # print(gpu, ai, perf)
-                    scatter_data_gemm["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
-                    scatter_data_gemm["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
-                    scatter_data_gemm["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
-                else:
-                    if ai > knee and roofline == False:
-                        x_left = knee
-                        y_patch[1] = peak
-                        prev_xs = scatter_data['xs'][-1]
-                        prev_xs[2] = knee
-                        prev_xs[3] = knee
-
-                        prev_ys = scatter_data['ys'][-1]
-                        prev_ys[2] = peak
-
-                        scatter_data['xs'][-1] = prev_xs
-                        scatter_data['ys'][-1] = prev_ys
-
-                        roofline = True
+                    if ai < peak / slope:
+                        y_patch = [0.05, slope * x_left, slope * x_right, 0.05]
+                    else:
+                        # print(op_type, data_type, ai, peak)
+                        y_patch = [0.05, peak, peak, 0.05]
                     
-                    x_patch = [x_left, x_left, x_right, x_right]
-                    scatter_data["x"].append(float(f"{ai:.10f}"))
-                    scatter_data["y"].append(float(f"{perf:.10f}"))
-                    scatter_data["op"].append(op)
-                    scatter_data["data_type"].append(data_type)
-                    scatter_data["gpu"].append(gpu)
-                    scatter_data["power"].append(power)
-                    # print(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)])
-                    # scatter_data["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
-                    # scatter_data["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
-                    # scatter_data["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
-                    scatter_data["xs"].append(x_patch)
-                    scatter_data["ys"].append(y_patch)
-                    scatter_data["color"].append(None)
+                    knee = peak / slope
+                    # print(knee)
+                    if op_type == 'GEMM':                    
+                        scatter_data_gemm["x"].append(float(f"{ai:.10f}"))
+                        scatter_data_gemm["y"].append(float(f"{perf:.10f}"))
+                        scatter_data_gemm["op"].append(op_type)
+                        scatter_data_gemm["data_type"].append(data_type)
+                        scatter_data_gemm["gpu"].append(gpu)
+                        scatter_data_gemm["power"].append(power)
+                        scatter_data_gemm["color"].append(None)
+                        # print(gpu, ai, perf)
+                        scatter_data_gemm["m"].append(df[(df['GPU'] == gpu) & (df['DATA'] == data_type) & (df['OP'] == op_type) & (df['AI'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                        scatter_data_gemm["n"].append(df[(df['GPU'] == gpu) & (df['DATA'] == data_type) & (df['OP'] == op_type) & (df['AI'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                        scatter_data_gemm["k"].append(df[(df['GPU'] == gpu) & (df['DATA'] == data_type) & (df['OP'] == op_type) & (df['AI'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                    else:
+                        if ai > knee and roofline == False:
+                            x_left = knee
+                            y_patch[1] = peak
+                            if op_type in scatter_data['op'] and data_type in scatter_data['data_type'] and scatter_data['xs']:
+                                prev_xs = scatter_data['xs'][-1]
+                                prev_xs[2] = knee
+                                prev_xs[3] = knee
 
-                # scatter_data["M"].append(df[[df['GPU'] == gpu] & [df[f'AI_HBM_{op}_{data_type}'] == ai]])
-                # scatter_data["slope"].append(slope)
-                # scatter_data["peak"].append(peak)
-                
-                if gpu not in gpu_sources:
-                    gpu_sources[gpu] = []
+                                prev_ys = scatter_data['ys'][-1]
+                                prev_ys[2] = peak
+
+                                scatter_data['xs'][-1] = prev_xs
+                                scatter_data['ys'][-1] = prev_ys
+
+                                roofline = True
+                        x_patch = [x_left, x_left, x_right, x_right]
+                        # if gpu == 'MI250X' and data_type == 'FP64' and op_type == 'MULADD':
+                        #     print(ai, x_patch, y_patch)
+                        scatter_data["x"].append(float(f"{ai:.10f}"))
+                        scatter_data["y"].append(float(f"{perf:.10f}"))
+                        scatter_data["op"].append(op_type)
+                        scatter_data["data_type"].append(data_type)
+                        scatter_data["gpu"].append(gpu)
+                        scatter_data["power"].append(power)
+                        # print(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)])
+                        # scatter_data["m"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['M'])
+                        # scatter_data["n"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['N'])
+                        # scatter_data["k"].append(df[(df['GPU'] == gpu) & (df[f'AI_HBM_{op}_{data_type}'] == ai) & (df['PERF'] == perf)].iloc[0]['K'])
+                        scatter_data["xs"].append(x_patch)
+                        scatter_data["ys"].append(y_patch)
+                        scatter_data["color"].append(None)
+
+                    # scatter_data["M"].append(df[[df['GPU'] == gpu] & [df[f'AI_HBM_{op}_{data_type}'] == ai]])
+                    # scatter_data["slope"].append(slope)
+                    # scatter_data["peak"].append(peak)
+                    
+                    if gpu not in gpu_sources:
+                        gpu_sources[gpu] = []
 # print(scatter_data)
+for data in zip(*scatter_data.values()):
+    ai, perf, op_type, data_type, gpu, power, color, x_patch, y_patch = data
+    # print(gpu, data_type, op_type)
+    # if gpu == 'MI250X' and data_type == 'FP64' and op_type == 'MULADD':
+    #     print(ai, x_patch, y_patch)
 
 for gpu, gpu_df in emp_roofs.items():
     min_power = 0
@@ -546,10 +377,8 @@ for gpu, gpu_df in emp_roofs.items():
         min_power,
         max_power,
     )
-    print(gpu, max_power)
-    print(gpu, min_power)
     color_map = LinearSegmentedColormap.from_list(
-        'green_to_red', plt.cm.get_cmap('hsv')(np.linspace(0.33, 0, 256))
+        'green_to_red', matplotlib.colormaps.get_cmap('hsv')(np.linspace(0.33, 0, 256))
     )
 
     # Convert to a hex palette
@@ -593,40 +422,13 @@ for gpu, gpu_df in emp_roofs.items():
     for i, gpu_entry in enumerate(scatter_data_gemm['gpu']):
         if gpu_entry == gpu:
             power = scatter_data_gemm['power'][i]
-            # if gpu == 'MI300A':
-            #     print(power)
-            #     print(df[df['GPU'] == 'GPU']['Power'].min())
-            #     print(df[df['GPU'] == 'GPU']['Power'].max())
-            #     print(to_hex(color_map(norm(power))))
-            # print(to_hex(color_map(norm(power))))
             scatter_data_gemm['color'][i] = to_hex(color_map(norm(power)))
     
-    # mem = key.split('_')[0]
-    # op = key.split('_')[1]
-    # data = key.split('_')[2]
-    # for key, (peak, slope) in gpu_df:
+    for i, gpu_entry in enumerate(scatter_data['gpu']):
+        if gpu_entry == gpu:
+            power = scatter_data['power'][i]
+            scatter_data['color'][i] = to_hex(color_map(norm(power)))
 
-    #     x_intersect = peak / slope
-    #     x_slope = AI[AI <= x_intersect] # Generate x values for sloped line
-    #     x_slope = np.array([float(x_slope[0]), float(x_slope[-1])])
-    #     x_horizontal = AI[AI >= x_intersect] # Generate x values for horizontal line
-    #     x_horizontal = [x_horizontal.min(), x_horizontal.max()]
-    #     y_slope = slope * x_slope # Generate y values for sloped line (bandwidth * AI)
-    #     y_slope = [y_slope.min(), y_slope.max()]
-    #     y_horizontal = np.full_like(x_horizontal, peak) # Generate y values for horizontal line (peak performance)
-    #     y_horizontal = [y_horizontal.min(), y_horizontal.max()]
-    # # print(f'Plotting {mem} {op} {data}...')
-    # # print(f'Slope (Bw): {np.round(slope, 2)}')
-
-    # # Create data sources for the lines
-    #     source_slope = ColumnDataSource(data=dict(x=x_slope, y=y_slope, gpu=[gpu]*2))
-    #     source_horizontal = ColumnDataSource(data=dict(x=x_horizontal, y=y_horizontal, gpu=[gpu]*2))
-
-    #     # Plot the lines without labels
-    #     slope = p.line('x', 'y', source=source_slope, line_width=2, color='black', visible=False)
-    #     peak = p.line('x', 'y', source=source_horizontal, line_width=2, color='black', line_dash='dashed', visible=False)
-    #     slope.name = 'roofline'
-    #     peak.name = 'roofline'
     color_bar.name = 'power'
     power_label.name = 'power'
     
@@ -646,8 +448,7 @@ source_full_gemm = ColumnDataSource(data=scatter_data_gemm)
 
 scatter_renderer = p.scatter(
     x="x", y="y", source=source_all,
-    fill_alpha=0.5,
-    size=6, color='black', marker='circle', visible=False
+    size=12, color='black', marker='circle', visible=False
 )
 
 scatter_renderer_gemm = p.scatter(
@@ -835,10 +636,13 @@ op_checkboxes.js_on_change('active', callback)
 data_checkboxes.js_on_change('active', callback)
 gpu_checkboxes.js_on_change('active', callback)
 
-# Layout and show
-widgets = column(op_checkboxes, data_checkboxes, gpu_checkboxes)
+from bokeh.events import DocumentReady
+curdoc().on_event(DocumentReady, lambda event: callback.execute({}))
 
-centered_plot = row(
+# Layout and show
+widgets = bl.column(op_checkboxes, data_checkboxes, gpu_checkboxes)
+
+centered_plot = bl.row(
     Spacer(width=0, sizing_mode="stretch_width"),
     p,
     widgets,
@@ -848,7 +652,7 @@ centered_plot = row(
 )
 
 # Final layout
-layout = column(
+layout = bl.column(
     Spacer(height=70),
     centered_plot,
     Spacer(height=70),
